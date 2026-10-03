@@ -8,3 +8,5 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+docs/raw.mp4
+docs/.sp
