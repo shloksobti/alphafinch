@@ -55,7 +55,7 @@ def cmd_evolve(args, demo=False):
     if provider is None and not demo:
         console.print("[yellow]No AI provider found. Running offline (parameter tweaks and blends only).\n"
                       "Set ANTHROPIC_API_KEY / OPENAI_API_KEY, install Claude Code, or run Ollama for AI breeding.[/]")
-    exam = fitness.SealedExam(px, hold_start, budget=args.exam_budget)
+    exam = fitness.SealedExam(px, hold_start, budget=args.exam_budget, alpha=getattr(args, "alpha", 0.05))
     cfg = Config(islands=args.islands, island_size=args.island_size, offspring=args.offspring,
                  generations=args.generations, workers=args.workers, seed=args.seed)
     label = MARKET_LABEL.get(args.market, args.market)
@@ -151,6 +151,7 @@ def main(argv=None):
     ev.add_argument("--island-size", type=int, default=8)
     ev.add_argument("--offspring", type=int, default=4, help="children per island per generation")
     ev.add_argument("--exam-budget", type=int, default=10)
+    ev.add_argument("--alpha", type=float, default=0.05, help="false-certification rate of the sealed exam")
     ev.add_argument("--workers", type=int, default=6)
     ev.add_argument("--seed", type=int, default=0)
     ev.add_argument("--out", default="runs")
