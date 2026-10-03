@@ -32,6 +32,41 @@ OP_VERB = {"mutate": "mutating", "crossover": "crossing", "immigrant": "inventin
            "blend": "blending", "seed": "planting"}
 
 
+def exam_reveal(live, name, span, mkt_hold, rev, verdict, bar, width, sleep):
+    """The dramatic ending: unseal the hidden years, draw the champion against the market,
+    stamp the verdict."""
+    for k in range(0, 21):
+        prog = "█" * k + "░" * (20 - k)
+        live.update(Panel(Group(Align.center(Text("🔒  THE SEALED EXAM", style="bold #f9e2af")),
+                                Align.center(Text(f"{name} has never seen {span}", style="grey62")),
+                                Text(""), Align.center(Text(f"unsealing  {prog}", style="#f9e2af"))),
+                          border_style="#f9e2af", width=width, padding=(1, 2)), refresh=True)
+        sleep(0.05)
+    curves = [(mkt_hold, "#6c7086"), (rev["equity"].values, "bold #a6e3a1")]
+    leg = Text()
+    for label, col in [("buy everything (equal weight)", "#6c7086"), (name, "bold #a6e3a1")]:
+        leg.append("━━ ", style=col)
+        leg.append(label + "    ")
+    panel = None
+    for k in range(1, 36):
+        panel = Panel(Group(chart(curves, width=width - 6, height=12, upto=k / 35), Text(""), leg),
+                      title=f"🔒 the sealed years, {span}: growth of $1", border_style="#f9e2af", width=width)
+        live.update(panel, refresh=True)
+        sleep(0.05)
+    passed = verdict == "PASS"
+    stamp = Text.assemble(("  ✅ PASS  " if passed else "  ❌ FAIL  ",
+                           "bold #ffffff on #1a7f37" if passed else "bold #ffffff on #cf222e"),
+                          (f"   sealed-years alpha {rev['alpha']:+.1%}/yr  ·  t = {rev['alpha_t']:.2f}  ·  bar {bar:.2f}", "white"))
+    if passed:
+        moral = Text("  It beat the market by more than luck can explain.", style="bold #a6e3a1")
+    else:
+        mkt_cagr = mkt_hold[-1] ** (252 / max(len(mkt_hold) - 1, 1)) - 1
+        moral = Text(f"  It made {rev['cagr']:+.0%} a year; buying everything made {mkt_cagr:+.0%}. "
+                     "No proof of a real edge.", style="bold #f9e2af")
+    live.update(Group(panel, stamp, moral), refresh=True)
+    sleep(3.5)
+
+
 class Cinema:
     def __init__(self, run_dir: Path, speed: float = 1.0, width: int = 118):
         self.dir = Path(run_dir)
@@ -182,34 +217,8 @@ class Cinema:
                                           (f"fitness {c['fitness']:+.2f}", "#f9e2af")))
 
             # 3. the sealed exam -------------------------------------------------------------------
-            for k in range(0, 21):
-                bar = "█" * k + "░" * (20 - k)
-                live.update(Panel(Group(Align.center(Text("🔒  THE SEALED EXAM", style="bold #f9e2af")),
-                                        Align.center(Text(f"{self.champ['name']} has never seen {self.span}", style="grey62")),
-                                        Text(""), Align.center(Text(f"unsealing  {bar}", style="#f9e2af"))),
-                                  border_style="#f9e2af", width=self.width, padding=(1, 2)), refresh=True)
-                self._sleep(0.05)
-            curves = [(self.mkt_hold, "#6c7086"), (self.rev["equity"].values, "bold #a6e3a1")]
-            leg = Text()
-            for name, col in [("buy everything (equal weight)", "#6c7086"), (self.champ["name"], "bold #a6e3a1")]:
-                leg.append("━━ ", style=col)
-                leg.append(name + "    ")
-            panel = None
-            for k in range(1, 36):
-                panel = Panel(Group(chart(curves, width=self.width - 6, height=12, upto=k / 35), Text(""), leg),
-                              title=f"🔒 the sealed years, {self.span}: growth of $1", border_style="#f9e2af", width=self.width)
-                live.update(panel, refresh=True)
-                self._sleep(0.05)
-            passed = self.verdict == "PASS"
-            stamp = Text.assemble(("  ✅ PASS  " if passed else "  ❌ FAIL  ",
-                                   "bold #ffffff on #1a7f37" if passed else "bold #ffffff on #cf222e"),
-                                  (f"   sealed-years alpha {self.rev['alpha']:+.1%}/yr  ·  t = {self.rev['alpha_t']:.2f}  ·  bar {self.exam.bar:.2f}",
-                                   "white"))
-            moral = Text("  It beat the market by more than luck can explain." if passed else
-                         f"  It made {self.rev['cagr']:+.0%} a year. So did buying everything. Its edge was luck.",
-                         style="bold green" if passed else "bold #f9e2af")
-            live.update(frame(panel, stamp, moral), refresh=True)
-            self._sleep(3.5)
+            exam_reveal(live, self.champ["name"], self.span, self.mkt_hold, self.rev, self.verdict,
+                        self.exam.bar, self.width, self._sleep)
 
             # 4. end card ------------------------------------------------------------------------
             live.update(Panel(Group(Align.center(Text("🐦  AlphaFinch", style="bold magenta")),

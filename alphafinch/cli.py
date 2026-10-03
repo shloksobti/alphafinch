@@ -64,6 +64,17 @@ def cmd_evolve(args, demo=False):
     evo.on_event = view
     with view:
         champ = evo.run()
+    if champ is not None and champ.exam in ("PASS", "FAIL") and not getattr(args, "no_reveal", False):
+        from rich.live import Live
+        from .cinema import exam_reveal
+        rev = exam.reveal(champ.id, champ.code)
+        hold_px = px[px.index >= hold_start]
+        mkt_hold = (1 + hold_px.pct_change().fillna(0).mean(axis=1)).cumprod().values
+        span = f"{hold_start.strftime('%b %Y')} – {px.index[-1].strftime('%b %Y')}"
+        console.print()
+        with Live(console=console, auto_refresh=False) as live:
+            exam_reveal(live, champ.name, span, mkt_hold, rev, champ.exam, exam.bar,
+                        min(console.width, 118), time.sleep)
     out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
     with console.status("[cyan]Writing the morning report…"):
         path = report.write(evo, out, label, train, hold_start)
@@ -143,6 +154,7 @@ def main(argv=None):
     ev.add_argument("--workers", type=int, default=6)
     ev.add_argument("--seed", type=int, default=0)
     ev.add_argument("--out", default="runs")
+    ev.add_argument("--no-reveal", action="store_true", help="skip the animated exam reveal at the end")
 
     dm = sub.add_parser("demo", help="offline demo on a synthetic market (no AI, no network)")
     dm.add_argument("--generations", type=int, default=12)
