@@ -138,6 +138,12 @@ def write(evo, out_dir: Path, market_label: str, train: pd.DataFrame, holdout_st
 <pre>{html.escape(champ.code)}</pre>
 <p class=note>Research software, not investment advice. Backtests ignore taxes, slippage beyond 5 bps per unit turnover, borrow costs and capacity.</p>
 </main></body></html>"""
+    meta = {"market_label": market_label, "holdout_start": str(pd.Timestamp(holdout_start).date()),
+            "train_start": str(train.index[0].date()), "generations": evo.gen, "islands": len(evo.islands),
+            "provider": evo.llm.name if evo.llm else "none", "model": getattr(evo.llm, "model", None),
+            "exam_budget": evo.exam.budget, "exam_bar": evo.exam.bar,
+            "exam": [{"id": a["id"], "verdict": a["verdict"]} for a in evo.exam.attempts]}
+    (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))
     path = out_dir / "report.html"
     path.write_text(doc)
     (out_dir / "champion.py").write_text(champ.code)

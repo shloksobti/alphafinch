@@ -1,15 +1,13 @@
 Output docs/demo.gif
 Set Shell "bash"
-Set FontSize 13
-Set Width 1500
-Set Height 640
-Set Padding 18
+Set FontSize 15
+Set Width 1180
+Set Height 560
+Set Padding 16
 Set Theme "Catppuccin Mocha"
-Set PlaybackSpeed 2
-Set TypingSpeed 40ms
 Hide
-Type "source .venv/bin/activate && clear" Enter
+Type "source .venv/bin/activate && clear && alphafinch replay runs/gif/20261003-232222" Enter
+Wait+Screen@120s /AI breeds trading strategies/
 Show
-Type "alphafinch evolve --market us --provider claude-code --generations 3 --islands 4 --offspring 3 --out runs/gif" Sleep 500ms Enter
-Wait+Screen@600s /Report:/
-Sleep 4s
+Wait+Screen@300s /pip install alphafinch/
+Sleep 2.5s

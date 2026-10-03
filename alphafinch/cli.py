@@ -67,6 +67,10 @@ def cmd_evolve(args, demo=False):
     out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
     with console.status("[cyan]Writing the morning report…"):
         path = report.write(evo, out, label, train, hold_start)
+        import json
+        meta = json.loads((out / "meta.json").read_text())
+        meta.update(market=args.market, tickers=getattr(args, "tickers", None), start=getattr(args, "start", None))
+        (out / "meta.json").write_text(json.dumps(meta, indent=1))
     passed = [a for a in exam.attempts if a["verdict"] == "PASS"]
     console.print()
     console.print(f"[bold]Champion:[/] {champ.name}  (training fitness {champ.fitness:+.2f})")
@@ -90,6 +94,26 @@ def cmd_backtest(args):
     console.print(f"Sharpe {s.sharpe:.2f} · CAGR {s.cagr:+.1%} · vol {s.vol:.1%} · max drawdown {s.max_dd:.0%} · "
                   f"turnover {s.turnover:.1f}x/yr · beta {s.beta:.2f} · fitness {fitness.fitness(s, code):+.2f}")
     console.print("[dim]The holdout is not touched by `backtest`. Use `evolve` to sit the sealed exam.[/]")
+    return 0
+
+
+def cmd_replay(args):
+    import json
+    from .cinema import Cinema
+    run = Path(args.run)
+    if not (run / "population.json").exists():
+        console.print(f"[red]{run} is not an AlphaFinch run directory[/]")
+        return 1
+    meta_f = run / "meta.json"
+    meta = json.loads(meta_f.read_text()) if meta_f.exists() else {}
+    if "holdout_start" not in meta or args.market:          # older runs: rebuild settings from flags
+        market = args.market or meta.get("market", "us")
+        px = data.load(market)
+        _, hs = _split(px, args.holdout_years, market)
+        meta.update(market=market, holdout_start=str(hs.date()),
+                    market_label=MARKET_LABEL.get(market, market), islands=meta.get("islands", 4))
+        meta_f.write_text(json.dumps(meta, indent=1))
+    Cinema(run, speed=args.speed, width=args.width).run()
     return 0
 
 
@@ -128,6 +152,13 @@ def main(argv=None):
     bt.add_argument("file")
     common(bt)
 
+    rp = sub.add_parser("replay", help="re-animate a finished run as a short cinematic story")
+    rp.add_argument("run", help="run directory, e.g. runs/20261003-231730")
+    rp.add_argument("--speed", type=float, default=1.0)
+    rp.add_argument("--width", type=int, default=118)
+    rp.add_argument("--market", help="only for runs saved before meta.json existed")
+    rp.add_argument("--holdout-years", type=float, default=None)
+
     sub.add_parser("markets", help="list built-in markets")
 
     args = p.parse_args(argv)
@@ -140,6 +171,8 @@ def main(argv=None):
         return cmd_evolve(ns, demo=True)
     if args.cmd == "backtest":
         return cmd_backtest(args)
+    if args.cmd == "replay":
+        return cmd_replay(args)
     if args.cmd == "markets":
         for k, v in MARKET_LABEL.items():
             console.print(f"[bold]{k:11s}[/] {v}")

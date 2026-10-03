@@ -28,6 +28,12 @@ alphafinch evolve --market crypto     # top coins vs USDT
 
 Then open `runs/<timestamp>/report.html` for the morning report: winners, sealed-exam verdicts, equity curves and the champion's family tree.
 
+Replay any finished run as a short cinematic story (the GIF above is one, from a real run):
+
+```bash
+alphafinch replay runs/<timestamp>
+```
+
 ## How strategies breed
 
 ```
