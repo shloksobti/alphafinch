@@ -36,3 +36,24 @@ migration every 4 generations, Claude Sonnet via `claude -p`).
   during the run.
 - Any PASS is reported as a pre-registered result. If both runs end with no PASS, we report that.
 - Sealed-period statistics are inspected only after each run has finished.
+
+
+## Results (added after both runs finished, 2026-10-04)
+
+**No strategy passed in either run.** Every exam attempt is listed; sealed-period numbers were computed only after each run ended.
+
+| Run | Champion examined | Born by | Gen | Verdict | Sealed alpha/yr | Alpha t | Sealed return/yr |
+|---|---|---|---|---|---|---|---|
+| A (industries) | Trend Crown | crossover | 1 | FAIL | -0.2% | -0.05 | +4.3% |
+| A (industries) | Residual Drift | mutate | 3 | FAIL | +0.1% | 0.08 | +5.8% |
+| A (industries) | Hedged Momentum Core | crossover | 17 | FAIL | -0.1% | -0.06 | +4.2% |
+| A (industries) | Residual Drift v23 | tweak | 21 | FAIL | +0.0% | 0.04 | +3.1% |
+| A (industries) | Guarded Residual Tide v4 | tweak | 25 | FAIL | +1.5% | 0.91 | +4.7% |
+| B (India) | Calm Momentum | crossover | 1 | FAIL | -2.6% | -0.69 | +6.4% |
+| B (India) | Steady Crown v3 | tweak | 2 | FAIL | +2.2% | 0.68 | +10.4% |
+| B (India) | Smooth Crown | migrant | 12 | FAIL | -2.0% | -0.55 | +5.2% |
+
+- Run A (industries): 448 strategies bred (286 by the AI); exam bar 2.58; 5 exam attempts, 0 passed.
+- Run B (India): 448 strategies bred (286 by the AI); exam bar 2.58; 3 exam attempts, 0 passed.
+
+Run B made 3 of its 5 allowed attempts: a new champion must clearly beat the last one examined before it may sit the exam.
