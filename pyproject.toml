@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alphafinch"
+version = "0.1.0"
+description = "Evolve trading strategies with AI while you sleep, then make them pass an exam they cannot cheat."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Shlok Sobti" }]
+keywords = ["trading", "quant", "backtesting", "llm", "evolution", "alphaevolve", "agents"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Office/Business :: Financial :: Investment",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10", "requests>=2.28", "rich>=13.0"]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=1.0"]
+openai = ["openai>=1.0"]
+report = ["matplotlib>=3.7"]
+all = ["anthropic>=1.0", "openai>=1.0", "matplotlib>=3.7"]
+dev = ["pytest"]
+
+[project.scripts]
+alphafinch = "alphafinch.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/shloksobti/alphafinch"
