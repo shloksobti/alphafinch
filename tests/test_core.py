@@ -17,7 +17,7 @@ def _panel():
     rng = np.random.default_rng(2)
     vol = pd.DataFrame(1e6 * rng.lognormal(0, 0.5, px.shape), index=px.index, columns=px.columns)
     macro = pd.DataFrame({"vix": 20.0}, index=px.index)
-    sector = pd.Series(["A", "B"] * 4, index=px.columns)
+    sector = pd.Series(["Banks", "Energy"] * 4, index=px.columns)
     return data.Panel(px, px, px, px, vol, sector, macro).astype32()
 
 
@@ -137,3 +137,10 @@ def test_offline_evolution_runs_with_team(lab):
     champ = e.run()
     assert champ is not None and np.isfinite(champ.fitness)
     assert e.team is not None and e.team.exam in ("PASS", "FAIL")
+
+
+def test_hard_coded_asset_and_sector_names_are_rejected(lab):
+    for code in ["def strategy(prices):\n    w = prices * 0\n    w['SYN03'] = 1.0\n    return w\n",
+                 "def strategy(prices, data):\n    return (data.sector == 'Banks').astype(float) + prices * 0\n"]:
+        with pytest.raises(StrategyError, match="hard-coded"):
+            lab.run(code)

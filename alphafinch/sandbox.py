@@ -58,3 +58,14 @@ def check(code: str) -> None:
             has_fn = True
     if not has_fn:
         raise StrategyError("code must define `def strategy(prices):`")
+
+
+def check_names(code: str, banned: set[str]) -> None:
+    """Strategies must choose assets from data, not by name: a hard-coded ticker or sector is a
+    route for an AI's memory of what happened later (hindsight) to leak into a backtest."""
+    tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            v = node.value.strip()
+            if v in banned:
+                raise StrategyError(f"hard-coded asset or sector name '{v}' is not allowed: select assets from data")

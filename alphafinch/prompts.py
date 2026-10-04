@@ -10,6 +10,7 @@ Contract:
 {data}
 - Return a DataFrame of target portfolio weights with the same index and columns as `prices`. Positive = long, negative = short. Gross exposure is capped at 1 by the engine (weights are scaled down if their absolute values sum above 1).
 - The weight on row t may use only information up to and including row t. The engine applies it from the close of t to the close of t+1. Never use future data: no shift(-k), no centred windows, no statistics computed over the whole sample. Look-ahead is detected automatically and the strategy is discarded.
+- Never refer to specific assets or sectors by name (no tickers, no sector strings): choose assets from data. Named assets are rejected because they let hindsight leak in.
 - Allowed imports: numpy, pandas, math only. No file, network or system access. Missing values are common (new listings, missing fundamentals): handle NaN explicitly.
 - Keep it short (under 45 lines) and vectorised. Put tunable numbers in UPPER_CASE constants at the top of the function.
 - The docstring must be one line: "<Name>: <one-sentence idea>. Hypothesis: <why this should earn alpha>." The name is 2-3 evocative words.

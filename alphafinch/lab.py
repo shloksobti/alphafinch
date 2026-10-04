@@ -27,7 +27,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from .sandbox import ALLOWED_IMPORTS, SAFE_BUILTINS, StrategyError, check
+from .sandbox import ALLOWED_IMPORTS, SAFE_BUILTINS, StrategyError, check, check_names
 
 COST_BPS = 5.0
 LEAK_CUTS = (0.55, 0.85)
@@ -118,7 +118,9 @@ class Result:
 
 
 class Lab:
-    def __init__(self, panel, holdout_start=None, workers: int = 4, timeout: float = 180.0, cost_bps=COST_BPS):
+    def __init__(self, panel, holdout_start=None, workers: int = 4, timeout: float = 180.0, cost_bps=COST_BPS,
+                 ban_names: bool = True):
+        self.ban_names = ban_names
         self.full = panel
         self.hold = pd.Timestamp(holdout_start) if holdout_start is not None else None
         self.train = panel.before(self.hold) if self.hold is not None else panel
@@ -128,6 +130,11 @@ class Lab:
             pickle.dump(panel, f)
         self._pool = None
         self._start()
+        names = {str(c) for c in panel.columns}
+        if panel.sector is not None and panel.sector.nunique() > 1:
+            names |= {str(x) for x in panel.sector.unique()}
+        names |= {n.split(".")[0] for n in names if n.endswith(".NS")}       # RELIANCE as well as RELIANCE.NS
+        self.banned_names = {n for n in names if len(n) >= 2}
         mk = lambda p: p.close.astype("float64").pct_change().fillna(0.0).mean(axis=1)
         self.mkt = {"train": mk(self.train), "full": mk(self.full)}
 
@@ -147,6 +154,8 @@ class Lab:
 
     def run(self, code: str, split: str = "train", check_leaks: bool = True) -> Result:
         check(code)
+        if self.ban_names:
+            check_names(code, self.banned_names)
         fut = self._pool.submit(_task, code, split, check_leaks, self.cost_bps)
         try:
             out = fut.result(timeout=self.timeout)
