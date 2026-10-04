@@ -12,7 +12,7 @@ winners on a sealed holdout that they never see.
 Use the Claude Code provider so the user's existing subscription does the breeding:
 
 ```bash
-pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
+pip install "alphafinch[all]"
 alphafinch evolve india --provider claude-code --generations 20
 ```
 

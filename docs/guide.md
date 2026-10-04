@@ -17,7 +17,7 @@ overview, and `alphafinch <command> -h` for every option of one command.
 ## Install
 
 ```bash
-pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
+pip install "alphafinch[all]"
 alphafinch demo          # offline, no AI, no network: checks everything works
 ```
 

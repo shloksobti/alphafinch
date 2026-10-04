@@ -5,6 +5,8 @@
 ### AI evolves trading strategies while you sleep.<br>Then they sit an exam they can't cheat.
 
 <p>
+<a href="https://pypi.org/project/alphafinch/"><img src="https://img.shields.io/pypi/v/alphafinch?logo=pypi&logoColor=white&color=3775A9" alt="PyPI"></a>
+<a href="https://pypi.org/project/alphafinch/"><img src="https://img.shields.io/pypi/dm/alphafinch?label=downloads&color=3775A9" alt="Downloads"></a>
 <a href="https://github.com/shloksobti/alphafinch/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/shloksobti/alphafinch/tests.yml?branch=main&label=tests&logo=github" alt="tests"></a>
 <a href="https://github.com/shloksobti/alphafinch"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white" alt="Python 3.10+"></a>
 <a href="https://github.com/shloksobti/alphafinch/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
@@ -51,10 +53,10 @@ The caveats are in the [full write-up](docs/preregistration-world.md): it is wea
 
 ## Quick start
 
-Needs Python 3.10+. No API keys or data subscriptions: market data is free and downloaded on first use.
+Needs Python 3.10+. No API keys or data subscriptions: market data is free and downloaded on first use. Prefer the latest code? `pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"`.
 
 ```bash
-pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
+pip install "alphafinch[all]"
 
 alphafinch demo                                # offline: synthetic market, no AI, no network (~1 min)
 alphafinch evolve india                        # NIFTY 200 stocks; AI provider auto-detected
