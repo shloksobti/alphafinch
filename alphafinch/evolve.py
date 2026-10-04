@@ -40,7 +40,7 @@ from . import engine, fitness as fit, prompts
 from .lab import Lab
 from .llm import LLMError, Provider
 from .sandbox import StrategyError
-from .seeds import IMMIGRANT_THEMES, SEEDS
+from .seeds import FUTURES_THEMES, IMMIGRANT_THEMES, SEEDS
 
 _ids = itertools.count(1)
 
@@ -275,7 +275,8 @@ class Evolution:
                                                self.market, nb), strong=True)
             parents, name = (a.id, b.id), None
         else:  # immigrant
-            code = self._ask(prompts.immigrant(self.rng.choice(IMMIGRANT_THEMES), self.market, nb), strong=True)
+            themes = FUTURES_THEMES if "futures" in self.market.lower() else IMMIGRANT_THEMES
+            code = self._ask(prompts.immigrant(self.rng.choice(themes), self.market, nb), strong=True)
             parents, name = (), None
         if not code:
             return None

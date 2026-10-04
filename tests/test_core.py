@@ -252,3 +252,10 @@ def test_mandate_is_enforced_in_the_lab_and_charges_borrow():
         diff = (free.run(short_all).returns - fee.run(short_all).returns).iloc[5:]
         assert np.allclose(diff, 0.05 / 252, rtol=0.05)                       # 500 bps a year on a full short
     assert "NO SHORTING" in md.get("long-only").describe()
+
+
+def test_holdings_respect_the_mandate():
+    from alphafinch import mandate as md
+    with Lab(_panel(), None, workers=1, timeout=20, mandate=md.get("long-only")) as lb:
+        w = lb.weights(SEEDS["Snapback"], last=3)          # a long/short seed
+        assert len(w) == 3 and (w.values >= 0).all() and (w.abs().sum(axis=1) <= 1 + 1e-9).all()

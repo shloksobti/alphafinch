@@ -45,7 +45,9 @@ pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
 alphafinch demo                                # offline: synthetic market, no AI, no network (~1 min)
 alphafinch evolve --market us                  # S&P 500; AI provider auto-detected
 alphafinch evolve --market india               # NIFTY 200
+alphafinch evolve --market futures             # 39 futures: equities, rates, FX, energy, metals, agriculture
 alphafinch world-exam runs/<run>/champion.py   # test a champion on 7 markets it has never seen
+alphafinch holdings runs/<run>/champion.py --market india   # what it wants to hold today
 alphafinch replay runs/<run>                   # re-watch a finished run as a short story
 ```
 
@@ -73,6 +75,26 @@ Each run writes `runs/<timestamp>/report.html`: the champion, its family tree, t
 **The world exam.** Three years of one market can rarely prove a realistic edge. So a frozen strategy runs unchanged on seven other markets, and the evidence is pooled. The verdict uses the lower of two pooled t-statistics (Newey–West and Stouffer), so a strategy has to convince both. Calibrated with placebos: 0 of 200 random strategies passed.
 
 **The forward test.** `alphafinch forward freeze runs/<run>` today, `alphafinch forward score` in six months. No model has seen tomorrow's data.
+
+## Trading rules (mandates)
+
+Real investors have constraints. A mandate is enforced by the engine on every strategy's weights, so a strategy can never break the rules and still look good. The AI is told the rules too, so it designs within them.
+
+| `--mandate` | Rules |
+|---|---|
+| `long-only` | Cash / spot market: no shorting, no leverage. Realistic for most retail investors, e.g. in India, where cash-market shorts can't be held overnight |
+| `long-short` | Shorts allowed, with a 0.5%/yr borrow fee on short positions |
+| `market-neutral` | Long/short with net market exposure held within ±10% |
+| `derivatives` | Shorts only where single-stock futures exist (India: the NSE F&O list), up to 2× gross, 3%/yr financing above 1× |
+| `futures` | Default for `--market futures`: shorting is free, up to 3× gross (margin) |
+
+Fine-tune with `--max-gross`, `--max-weight 0.05` and `--borrow-bps`. Mandates work with `evolve`, `backtest`, `holdings` and `world-exam`.
+
+## Futures
+
+`--market futures` gives the AI 39 futures across equity indices, government bonds, currencies, energy, metals and agriculture, so it can test hypotheses like trend-following, crisis alpha, carry or cross-asset signals.
+
+Free continuous futures prices splice contracts without adjusting for the roll, which creates fake jumps: on Yahoo's natural-gas series a rolled position "earned" +20% a year when it really lost 12%. So AlphaFinch builds each future from a fund that holds and rolls the real contracts, converted to excess returns over T-bills, which is what a futures position earns.
 
 ## Safety and honesty
 

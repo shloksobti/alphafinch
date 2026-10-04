@@ -116,6 +116,15 @@ def _simulate(w: pd.DataFrame, close: pd.DataFrame, cost_bps: float, halves=None
     return r, turnover, held.abs().sum(axis=1).values, half_r
 
 
+def _weights_task(code: str, split: str, last: int):
+    try:
+        p = _W[split]
+        w = _normalise(_weights(code, p)).iloc[-last:]
+        return {"w": w}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"[:300]}
+
+
 def _task(code: str, split: str, check_leaks: bool, cost_bps: float):
     try:
         p = _W[split]
@@ -152,7 +161,7 @@ class Result:
 
 class Lab:
     def __init__(self, panel, holdout_start=None, workers: int = 4, timeout: float = 180.0, cost_bps=COST_BPS,
-                 ban_names: bool = True, validation_start=None, mandate=None):
+                 ban_names: bool = True, validation_start=None, mandate=None, ban_sectors: bool | None = None):
         self.ban_names = ban_names
         self.full = panel
         self.hold = pd.Timestamp(holdout_start) if holdout_start is not None else None
@@ -171,7 +180,9 @@ class Lab:
         self._pool = None
         self._start()
         names = {str(c) for c in panel.columns}
-        if panel.sector is not None and panel.sector.nunique() > 1:
+        if ban_sectors is None:          # futures: asset classes are structure, not stock-picking by memory
+            ban_sectors = "FUTURES" not in getattr(panel, "note", "")
+        if ban_sectors and panel.sector is not None and panel.sector.nunique() > 1:
             names |= {str(x) for x in panel.sector.unique()}
         names |= {n.split(".")[0] for n in names if n.endswith(".NS")}       # RELIANCE as well as RELIANCE.NS
         self.banned_names = {n for n in names if len(n) >= 2}
@@ -214,6 +225,16 @@ class Lab:
         halves = [pd.Series(h, idx, dtype="float64") for h in out["halves"]] if "halves" in out else None
         return Result(pd.Series(out["r"], idx, dtype="float64"), pd.Series(out["to"], idx, dtype="float64"),
                       pd.Series(out["gross"], idx, dtype="float64"), halves)
+
+    def weights(self, code: str, split: str = "full", last: int = 30) -> pd.DataFrame:
+        """The portfolio the strategy asks for on the last `last` days, after the mandate."""
+        check(code)
+        if self.ban_names:
+            check_names(code, self.banned_names)
+        out = self._pool.submit(_weights_task, code, split, last).result(timeout=self.timeout)
+        if "error" in out:
+            raise StrategyError(out["error"])
+        return out["w"]
 
     def close(self):
         if self._pool:

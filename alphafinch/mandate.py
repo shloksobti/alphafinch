@@ -8,6 +8,8 @@ Presets
   long-only       cash / spot market: no shorting, no leverage (the default for most investors)
   long-short      shorts allowed on any asset, borrow fee charged on short positions
   market-neutral  long-short with net market exposure held within +-10%
+  futures         for the futures market: shorting is free and gross exposure may reach 3x (margin);
+                  returns are already net of the cash rate, so no financing charge
   derivatives     shorts only where single-stock futures exist (India: the F&O list; elsewhere
                   any asset), gross exposure up to 2x with a financing charge above 1x
 """
@@ -61,6 +63,7 @@ PRESETS = {
     "long-only": Mandate("long-only", shorts="none", min_net=0.0),
     "long-short": Mandate("long-short", shorts="all", borrow_bps=50),
     "market-neutral": Mandate("market-neutral", shorts="all", min_net=-0.1, max_net=0.1, borrow_bps=50),
+    "futures": Mandate("futures", shorts="all", max_gross=3.0, min_net=-3.0, max_net=3.0),
     "derivatives": Mandate("derivatives", shorts="fno", max_gross=2.0, min_net=-2.0, max_net=2.0,
                            borrow_bps=50, financing_bps=300),
 }
@@ -75,6 +78,8 @@ def get(name: str | None, **overrides) -> Mandate:
 def for_market(name: str | None, market: str, **overrides) -> Mandate | None:
     """Resolve a preset for a market. 'derivatives' shorts only F&O stocks in India; elsewhere
     any stock (via borrow or single-stock futures/CFDs)."""
+    if name is None and market == "futures":
+        name = "futures"
     if name is None and not any(v is not None for v in overrides.values()):
         return None
     m = get(name, **overrides)

@@ -162,3 +162,14 @@ IMMIGRANT_THEMES = [
     "price gaps and intraday range from open/high/low",
     "fundamentals: value, profitability, growth and their interaction with momentum",
 ]
+
+FUTURES_THEMES = [
+    "time-series momentum: each future's own trend over several horizons, sized by volatility",
+    "cross-asset signals: what bonds, the dollar or commodities say about equities, and vice versa",
+    "carry proxies: assets whose excess returns persist (e.g. currencies, curve shape from the 2y/10y/30y bonds)",
+    "risk parity and volatility targeting across asset classes",
+    "commodity seasonality (month-of-year) and mean reversion after extreme moves",
+    "crisis alpha: positioning that profits when the volatility index spikes",
+    "relative value within an asset class (one bond, currency or commodity against its peers)",
+    "macro regimes: the yield curve, credit spreads and the dollar as switches between asset classes",
+]

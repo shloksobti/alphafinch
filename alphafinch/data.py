@@ -29,6 +29,7 @@ import requests
 from . import universe as uni
 
 CACHE = Path.home() / ".alphafinch"
+ANN_DAYS = 252
 UA = {"User-Agent": "Mozilla/5.0 (alphafinch research tool; https://github.com/shloksobti/alphafinch)"}
 import os
 
@@ -39,7 +40,7 @@ def _sec_headers():
     contact = os.environ.get("ALPHAFINCH_SEC_CONTACT")
     return {"User-Agent": f"alphafinch {contact}"} if contact else None
 DEFAULT_START = {"us": "2010-01-01", "india": "2010-01-01", "us30": "2008-04-01", "crypto": "2020-10-01",
-                 "industries": "1970-01-01", **{m: "2010-01-01" for m in uni.WORLD}}
+                 "industries": "1970-01-01", "futures": "2012-03-01", **{m: "2010-01-01" for m in uni.WORLD}}
 WORLD_INDEX = {"uk": "^FTSE", "europe": "^STOXX50E", "japan": "^N225", "hongkong": "^HSI", "australia": "^AXJO",
                "canada": "^GSPTSE", "korea": "^KS11"}
 
@@ -52,6 +53,7 @@ MACRO = {
     "us30": {"yahoo": {"vix": "^VIX", "index": "^GSPC"}, "fred": {"rate_10y": ("DGS10", 1)}},
     "crypto": {"yahoo": {"vix": "^VIX", "index": "^GSPC"}, "fred": {"rate_10y": ("DGS10", 1)}},
 }
+MACRO["futures"] = MACRO["us"]
 for _m, _ix in WORLD_INDEX.items():         # world markets: local index; the US VIX as the global fear gauge
     MACRO[_m] = {"yahoo": {"vix": "^VIX", "index": _ix, "oil": "CL=F", "gold": "GC=F"},
                  "fred": {"us_rate_10y": ("DGS10", 1)}}
@@ -67,6 +69,7 @@ class Panel:
     sector: pd.Series | None = None
     macro: pd.DataFrame | None = None
     fund: dict = field(default_factory=dict)
+    note: str = ""                  # extra context for the AI prompt (e.g. what the assets are)
 
     @property
     def index(self):
@@ -83,7 +86,7 @@ class Panel:
     def _map(self, f):
         g = lambda x: None if x is None else f(x)
         return Panel(f(self.close), g(self.open), g(self.high), g(self.low), g(self.volume), self.sector,
-                     g(self.macro), {k: f(v) for k, v in self.fund.items()})
+                     g(self.macro), {k: f(v) for k, v in self.fund.items()}, getattr(self, "note", ""))
 
     def head(self, n: int) -> "Panel":
         return self._map(lambda x: x.iloc[:n])
@@ -94,7 +97,8 @@ class Panel:
     def describe(self) -> str:
         """What a strategy can see (used in AI prompts)."""
         n = self.shape[1]
-        lines = [f"- data.close / data.open / data.high / data.low: prices (dates x {n} assets)"
+        lines = [self.note] if getattr(self, "note", "") else []
+        lines += [f"- data.close / data.open / data.high / data.low: prices (dates x {n} assets)"
                  if self.open is not None else f"- data.close: prices (dates x {n} assets)"]
         if self.volume is not None:
             lines.append("- data.volume: shares traded per day (dates x assets)")
@@ -359,7 +363,31 @@ def build(market: str, tickers=None, start=None, progress=None) -> Panel:
                   _macro(market, idx))
     if market == "us" and not tickers and "cik" in univ and _sec_headers() is not None:
         panel.fund = _fund_panel(univ, close, pick("raw_close"), progress)
+    if market == "futures":
+        panel = _to_excess(panel, univ)
     return panel
+
+
+def _to_excess(panel: Panel, univ: pd.DataFrame) -> Panel:
+    """Turn fund total returns into futures-style excess returns (minus the 3-month T-bill rate,
+    known the day before), rebased to 100. Open/high/low are scaled by the same factor."""
+    tb = _cache_df("fred_DGS3MO", lambda: _fred("DGS3MO"))
+    rf = tb.iloc[:, 0] if tb is not None else pd.Series(dtype=float)
+    rf.index = rf.index + pd.Timedelta(days=1)
+    rf = rf.groupby(level=0).last().reindex(rf.index.union(panel.index)).ffill().reindex(panel.index).fillna(0.0)
+    daily_rf = (rf / 100 / ANN_DAYS).values[:, None]
+    r = panel.close.pct_change().fillna(0.0) - daily_rf
+    r.iloc[0] = 0.0
+    xs = 100 * (1 + r).cumprod()
+    k = xs / panel.close
+    names = univ.set_index("symbol")["name"].reindex(panel.columns)
+    note = ("- The assets are FUTURES across asset classes (data.sector = equity, rates, fx, energy, metals, "
+            "agriculture): " + "; ".join(f"{s} = {n}" for s, n in names.items()) + ". Prices are excess-return "
+            "indices of a rolled futures position (roll handled, T-bill rate removed), so a flat line means "
+            "earning cash. Shorting a future is as easy as buying one, and positions can be levered. Tickers are "
+            "listed for context only: strategies must never refer to them; select by data.sector (asset-class "
+            "names such as 'rates' may be used) or by data.")
+    return Panel(xs, panel.open * k, panel.high * k, panel.low * k, panel.volume, panel.sector, panel.macro, {}, note)
 
 
 def load(market: str = "us", tickers=None, start=None, progress=None, refresh_days: float = 1.0) -> Panel:

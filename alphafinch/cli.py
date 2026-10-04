@@ -8,6 +8,7 @@
   alphafinch forward freeze runs/<ts>   freeze a run's champion and team for a forward test
   alphafinch forward score              judge frozen strategies on data after their freeze date
   alphafinch world-exam a.py b.py       test frozen strategies on 7 stock markets they've never seen
+  alphafinch holdings strategy.py       what the strategy wants to hold today
   alphafinch markets                    list built-in markets
 """
 from __future__ import annotations
@@ -33,6 +34,7 @@ console = Console()
 MARKET_LABEL = {"us": "US stocks (S&P 500)", "india": "Indian stocks (NIFTY 200)", "us30": "30 US mega-caps",
                 "crypto": "Crypto vs USDT", "industries": "49 US industry portfolios (Ken French)",
                 "synthetic": "Synthetic market (offline)",
+                "futures": "Futures: 39 contracts across equities, rates, FX, energy, metals, agriculture",
                 **WORLD}
 
 
@@ -147,6 +149,40 @@ def _mandate(args):
                       max_weight=getattr(args, "max_weight", None), borrow_bps=getattr(args, "borrow_bps", None))
 
 
+def cmd_holdings(args):
+    panel = _load(args)
+    code = Path(args.file).read_text()
+    with Lab(panel, None, workers=1, mandate=_mandate(args)) as lab:
+        try:
+            w = lab.weights(code, "full", last=args.days + 1)
+        except StrategyError as e:
+            console.print(f"[red]Rejected:[/] {e}")
+            return 1
+    today, prev = w.iloc[-1], w.iloc[-1 - args.days] if len(w) > args.days else w.iloc[0]
+    held = today[today.abs() > 1e-6].sort_values(ascending=False)
+    sector = panel.sector if panel.sector is not None else pd.Series(dtype=str)
+    console.print(f"[bold]Target portfolio after the close of {w.index[-1].date()}[/] "
+                  f"({len(held)} positions · long {today.clip(lower=0).sum():.0%} · short {-today.clip(upper=0).sum():.0%} "
+                  f"· net {today.sum():+.0%})")
+    from rich.table import Table
+    t = Table(show_edge=False, pad_edge=False)
+    for col in ("asset", "sector", "weight", f"change vs {args.days}d ago"):
+        t.add_column(col, justify="right" if col != "asset" and col != "sector" else "left")
+    rows = list(held.items()) if args.all or len(held) <= 2 * args.top else \
+        list(held.head(args.top).items()) + [("…", None)] + list(held.tail(args.top).items())
+    for a, x in rows:
+        if x is None:
+            t.add_row("…", "", "", "")
+            continue
+        d = x - prev.get(a, 0.0)
+        t.add_row(str(a), str(sector.get(a, "")), f"[{'green' if x > 0 else 'red'}]{x:+.2%}[/]",
+                  "" if abs(d) < 1e-4 else f"{d:+.2%}")
+    console.print(t)
+    console.print("[dim]Weights are fractions of capital (negative = short), held from this close to the next. "
+                  "Research output from a backtest engine, not investment advice.[/]")
+    return 0
+
+
 def cmd_backtest(args):
     panel = _load(args)
     hold = _holdout_start(panel, args.holdout_years, args.market)
@@ -251,7 +287,7 @@ def cmd_world_exam(args):
 
 
 def _mandate_args(sp):
-    sp.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives"],
+    sp.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives", "futures"],
                     help="trading rules enforced by the engine: long-only = cash/spot market, no shorting; "
                          "derivatives = shorts only in F&O stocks (India), up to 2x gross")
     sp.add_argument("--max-gross", type=float, help="cap on gross exposure (leverage), overrides the mandate")
@@ -329,7 +365,14 @@ def main(argv=None):
                     help="strategies tested on these markets and years before (raises the bar)")
     we.add_argument("--lab-workers", type=int, default=4)
     we.add_argument("--json", help="also write results to this file")
-    we.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives"])
+    we.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives", "futures"])
+
+    hd = sub.add_parser("holdings", help="what a strategy wants to hold today")
+    hd.add_argument("file")
+    common(hd)
+    hd.add_argument("--top", type=int, default=10, help="show the top and bottom N positions")
+    hd.add_argument("--all", action="store_true", help="show every position")
+    hd.add_argument("--days", type=int, default=5, help="compare with N trading days ago")
 
     sub.add_parser("markets", help="list built-in markets")
 
@@ -351,6 +394,8 @@ def main(argv=None):
         return cmd_forward(args)
     if args.cmd == "world-exam":
         return cmd_world_exam(args)
+    if args.cmd == "holdings":
+        return cmd_holdings(args)
     if args.cmd == "markets":
         for k, v in MARKET_LABEL.items():
             console.print(f"[bold]{k:11s}[/] {v}")

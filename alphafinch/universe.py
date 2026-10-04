@@ -61,6 +61,31 @@ def india_fno() -> list[str]:
     return pd.read_csv(SNAPSHOTS / "india_fno.csv")["symbol"].tolist()
 
 
+# Futures, represented by funds that hold and roll real futures (or the underlying, for equity indices,
+# bonds and currencies). Free continuous futures prices splice contracts without adjusting for the
+# roll, which creates fake jumps; these funds' returns include the roll correctly. data.build turns
+# them into excess returns (minus the T-bill rate), which is what a futures position earns.
+FUTURES = {
+    "equity": {"SPY": "S&P 500 (ES)", "QQQ": "Nasdaq 100 (NQ)", "IWM": "Russell 2000 (RTY)",
+               "EFA": "MSCI EAFE", "EEM": "MSCI Emerging Markets", "EWJ": "Japan (Nikkei/TOPIX)",
+               "FEZ": "Euro Stoxx 50", "EWU": "FTSE 100", "FXI": "China large caps", "INDA": "India (NIFTY)",
+               "EWZ": "Brazil (Ibovespa)", "EWY": "Korea (KOSPI)"},
+    "rates": {"SHY": "US 2-year (ZT)", "IEI": "US 5-year (ZF)", "IEF": "US 10-year (ZN)", "TLT": "US 30-year (ZB)",
+              "BWX": "International government bonds", "TIP": "US inflation-linked bonds"},
+    "fx": {"FXE": "Euro (6E)", "FXY": "Japanese yen (6J)", "FXB": "British pound (6B)", "FXA": "Australian dollar (6A)",
+           "FXC": "Canadian dollar (6C)", "FXF": "Swiss franc (6S)", "UUP": "US dollar index (DX)"},
+    "energy": {"USO": "WTI crude oil (CL)", "BNO": "Brent crude oil", "UNG": "Natural gas (NG)", "UGA": "Gasoline (RB)"},
+    "metals": {"GLD": "Gold (GC)", "SLV": "Silver (SI)", "CPER": "Copper (HG)", "PPLT": "Platinum (PL)",
+               "PALL": "Palladium (PA)"},
+    "agriculture": {"CORN": "Corn (ZC)", "WEAT": "Wheat (ZW)", "SOYB": "Soybeans (ZS)", "CANE": "Sugar (SB)",
+                    "DBA": "Agriculture basket"},
+}
+
+
+def futures() -> pd.DataFrame:
+    return pd.DataFrame([{"symbol": s, "sector": cls, "name": nm} for cls, d in FUTURES.items() for s, nm in d.items()])
+
+
 def get(market: str) -> pd.DataFrame:
     if market == "us":
         return sp500()
@@ -70,6 +95,8 @@ def get(market: str) -> pd.DataFrame:
         return pd.DataFrame({"symbol": US30, "sector": "Unknown", "cik": 0})
     if market == "crypto":
         return pd.DataFrame({"symbol": CRYPTO, "sector": "Crypto"})
+    if market == "futures":
+        return futures()
     if market in WORLD:
         return pd.read_csv(SNAPSHOTS / f"{market}.csv", dtype=str)
     raise ValueError(market)
