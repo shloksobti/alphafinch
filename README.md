@@ -80,7 +80,7 @@ Each generation, on every island:
 ```
 
 - The last `--holdout-years` (default 3; 1.5 for crypto) are locked away.
-- Only the final champion (and the team, if it's competitive) sits the exam. During evolution the AI never learns anything from it.
+- A champion may sit the exam only when it clearly beats the last one examined; the team sits it at the end if it's competitive. Verdicts never flow back to the AI.
 - The exam has a fixed budget of attempts (default 10).
 - To pass, the strategy's **holdout alpha** must have a t-statistic above `t⁻¹(α / budget)`. Each attempt reveals only one bit, so this bar stays valid however adaptively the population evolved. The theory is in [*Deflate by Bits, Not Trials*](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7557458).
 - After the run, the verdict is graded:
