@@ -66,3 +66,40 @@ Whatever happens, the final champion and team from each run will be frozen (code
 in `forward/` and scored on data after 2026-10-02, which no model has seen. The forward
 verdict uses the same statistic with K = 1 per frozen strategy, first checked at 6 months and
 again at 12 months.
+
+## Results (appended 2026-10-04, after both runs; nothing above was changed)
+
+Both runs completed as registered: 25 generations × 4 islands, Claude Code (Sonnet) with Opus for
+crossovers and immigrants. Every exam attempt is listed. Statistic: alpha t against the equal-weight
+benchmark over the sealed holdout. Reproduce with `scripts/prereg2_results.py <run dir>`.
+
+**Run C, US (bar 3.03): 0 of 5 passed.**
+
+| Attempt | Training fitness | Sealed alpha/yr | t | Beta | Return/yr (equal weight +18.9%) | Grade |
+|---|---|---|---|---|---|---|
+| Momentum Crown (seed, gen 0) | +0.43 | +6.8% | 1.13 | 1.05 | +28.1% | PROMISING |
+| Calm Quality Hedge v3 (gen 10) | +0.49 | +1.1% | 0.56 | 0.33 | +7.4% | FAIL |
+| Calm Quality Shield (gen 13) | +0.65 | +1.4% | 0.61 | 0.50 | +11.0% | FAIL |
+| Calm Quality Shield v14 (champion) | +0.72 | +1.5% | 0.67 | 0.54 | +11.8% | FAIL |
+| The Team (2 members) | +0.73 | +3.2% | 1.65 | 0.72 | +17.4% | PROMISING (≈10 years of data to prove) |
+
+**Run D, India (bar 2.82): 0 of 5 passed.**
+
+| Attempt | Training fitness | Sealed alpha/yr | t | Beta | Return/yr (equal weight +19.3%) | Grade |
+|---|---|---|---|---|---|---|
+| Steady Ascent (gen 1) | +1.08 | +0.8% | 0.26 | 0.84 | +16.9% | FAIL |
+| Steady Ascent v2 (gen 2) | +1.14 | +1.7% | 0.53 | 0.84 | +17.9% | FAIL |
+| Hedged Calm Quality (gen 5) | +1.34 | +1.2% | 0.48 | 0.30 | +6.9% | FAIL |
+| Hedged Calm Residual v31 (champion) | +1.50 | +3.1% | 1.28 | 0.24 | +7.9% | PROMISING (≈14 years) |
+| The Team | +1.93 | +2.6% | 1.05 | 0.39 | +10.1% | PROMISING (≈21 years) |
+
+**Reading.** No strategy passed in either market, so no edge is certified. All ten attempts had
+positive sealed alpha, and three are PROMISING, but none comes close to the bar. In the US, the
+evolved strategies did not beat the hand-written momentum seed out of sample: training fitness rose
+from 0.43 to 0.73 while sealed alpha fell. In both markets the search drifted toward low-beta
+"calm quality" portfolios, which kept a small positive alpha but returned far less than buying
+everything in a strong bull market.
+
+**Forward test.** The champion and team of each run are frozen in `forward/` (registry with code
+hash, git commit and asset list). They will be scored with `alphafinch forward score` on data after
+2026-10-02 (US) and 2026-10-01 (India), first at 6 months and again at 12 months.
