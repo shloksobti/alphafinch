@@ -2,231 +2,140 @@
 
 # 🐦 AlphaFinch
 
-### Evolve trading strategies with AI while you sleep.<br>Then make them pass an exam they can't cheat.
+### AI evolves trading strategies while you sleep.<br>Then they sit an exam they can't cheat.
 
-<img src="docs/demo.gif" alt="AlphaFinch evolving strategies in the terminal" width="900">
+<img src="docs/demo.gif" alt="AlphaFinch: install, evolve strategies, and the sealed exam" width="900">
 
-`pip install alphafinch` · works with **Claude Code**, **Anthropic**, **OpenAI**, **Ollama**, or **no AI at all**
+Works with **Claude Code**, **Anthropic**, **OpenAI**, **Ollama**, any OpenAI-compatible server, or **no AI at all**.
 
 </div>
 
 ---
 
-AlphaFinch is an [AlphaEvolve](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/)-style lab for markets. An AI writes trading strategies as small Python functions, backtests them and breeds the fittest. Generation after generation it mutates them, crosses them with each other, and lets the population evolve across islands.
+AlphaFinch is an [AlphaEvolve](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/)-style lab for markets. An AI writes trading strategies as short Python functions, backtests them, and breeds the fittest: mutating them, crossing them and letting populations evolve on separate islands.
 
-Every AI trading demo has the same problem: **evolution is the most powerful overfitting machine ever built.** Give it enough generations and it will "discover" a spectacular strategy in pure noise. So AlphaFinch locks the most recent years of data in a **sealed exam**. Evolution never sees it, the AI never sees it, and champions only ever learn **PASS** or **FAIL**. If something passes, it beat a bar that already accounts for every attempt.
+The catch with every AI trading demo: **evolution is the best overfitting machine ever built.** Run it long enough and it will "discover" a brilliant strategy in pure noise. AlphaFinch is built around that problem. The most recent years are locked in a **sealed exam** that neither evolution nor the AI ever sees, and the bar to pass accounts for every attempt.
 
-## Try it in 60 seconds
+**Most runs end with nothing passing.** That's the honest answer, and the point.
 
-```bash
-pip install "alphafinch[all]"
-alphafinch demo                       # offline: synthetic market, no AI, no network
-alphafinch evolve --market us         # real US stocks; AI provider auto-detected
-alphafinch evolve --market india      # NIFTY 200
-alphafinch evolve --market crypto     # top coins vs USDT
-```
+## What it found
 
-Then open `runs/<timestamp>/report.html` for the morning report: winners, sealed-exam verdicts, equity curves and the champion's family tree.
+We pre-registered every test before running it ([`docs/`](docs)) and report every result.
 
-Replay any finished run as a short cinematic story, from the real saved run:
+- **One market, three sealed years: 0 of 10 passed** (S&P 500 and NIFTY 200). Training scores rose while out-of-sample alpha fell: overfitting, caught in the act.
+- **So we rebuilt the search** to score alpha, choose champions on years breeding never saw, and demand an edge that holds across random halves of the stocks. On a stand-in exam it beat the original search in 4 of 4 matched runs.
+- **Then the world exam:** five strategies, bred only on data before 2017, were frozen and tested unchanged on **seven stock markets they had never seen**, from October 2017 to October 2026.
 
-```bash
-alphafinch replay runs/<timestamp>
-```
+| Strategy | Alpha / year | t (bar 2.33) | Markets with positive alpha | |
+|---|---|---|---|---|
+| **Quiet Sector Tether v2** | **+2.9%** | **3.40** | **7 of 7** | ✅ PASS |
+| The Team (India-bred) | +2.3% | 2.14 | 6 of 7 | 🟡 PROMISING |
+| Quiet Intraday Relay v2 | +0.9% | 1.03 | 5 of 7 | 🟡 PROMISING |
+| Two others | negative | | | ❌ FAIL |
 
-<img src="docs/replay.gif" alt="alphafinch replay: the AI writing a strategy, a new champion, and the sealed exam" width="820">
+*Quiet Sector Tether* buys, within each sector, the stocks that move least with the market and shorts those that move most. It is essentially **"betting against correlation"**, an anomaly published by AQR researchers in 2020: the AI rediscovered it from pre-2017 US data, and it held up in the UK, the Eurozone, Japan, Hong Kong, Australia, Canada and Korea. It survives higher trading costs (t 2.94 at 15 bps), a causal beta hedge (t 3.22) and the six standard Fama–French factors (alpha +2.5%/yr, t 2.64).
 
-## How strategies breed
+The caveats are in the [full write-up](docs/preregistration-world.md): it is weaker in 2020–26 alone (t 2.17), short-borrowing fees aren't modelled, and Korea banned short selling for parts of the period. It's frozen in [`forward/`](forward) to be judged again on data that doesn't exist yet.
 
-```
-   🏝 Island 1          🏝 Island 2          🏝 Island 3          🏝 Island 4
-  ┌────────────┐       ┌────────────┐       ┌────────────┐       ┌────────────┐
-  │ population │ ─✈️─▶ │ population │ ─✈️─▶ │ population │ ─✈️─▶ │ population │ ─✈️─┐
-  └────────────┘       └────────────┘       └────────────┘       └────────────┘     │
-        ▲                                                                           │
-        └──────────────────── champions migrate every few generations ──────────────┘
-```
-
-Each generation, on every island:
-
-| Operator | Who does it | What happens |
-|---|---|---|
-| 🧬 **Mutate** | AI | Reads a parent's code and its report card ("bleeds in sideways markets, trades too much") and improves one thing |
-| 💞 **Crossover** | AI | Combines the best idea of two successful parents into one coherent child |
-| 🛶 **Immigrant** | AI | Invents a brand-new strategy around a fresh theme (seasonality, breadth, tail risk…) |
-| 🔧 **Tweak** | no AI | Nudges one numeric constant (lookback 20 → 23): fast fine-tuning |
-| 🎨 **Blend** | no AI | The child holds a mix of both parents' portfolios |
-
-**Survival** uses training data only. The training years are split into four eras, and each era is scored on half Sharpe ratio and half *alpha* (return beyond what market exposure explains). Fitness is the average of the typical era and the **worst** era, so a strategy that made all its money in one lucky stretch loses. There are penalties for heavy trading and bloated code.
-
-**Robustness:** before a contender can become champion, AlphaFinch nudges its parameters and re-scores the neighbours. An edge that only exists at `LOOKBACK = 37` is fragile and gets marked down.
-
-**The AI works like a researcher, not a slot machine:**
-- Every strategy starts with a written hypothesis ("*Hypothesis: index funds must buy late, so…*").
-- A **lab notebook** records every idea tried and how it did. The AI reads it before writing the next one, so it builds on what worked and stops repeating failures.
-- Report cards show results era by era, so the AI can see *where* a strategy breaks.
-- Use a cheap model for routine mutations and a strong one for big ideas: `--strong-model opus` handles crossovers and immigrants.
-
-**Teams:** at the end, AlphaFinch picks up to five strong survivors that behave differently (correlation below 0.7) and combines them. Teams are often steadier than any single champion.
-
-**Diversity** is protected in two ways:
-- Each island keeps a **niche map** (slow vs fast traders, market-neutral vs market-hugging), and the best strategy in every niche survives, so the population can't collapse into 100 copies of one idea.
-- Champions **migrate** between islands. That's Darwin's Galápagos insight, and the same diversity trick AlphaEvolve uses.
-
-## The sealed exam
-
-```
-├──────────────── training data: evolution sees this ────────────────┤🔒 sealed: last 3 years ┤
-```
-
-- The last `--holdout-years` (default 3; 1.5 for crypto) are locked away.
-- A champion may sit the exam only when it clearly beats the last one examined; the team sits it at the end if it's competitive. Verdicts never flow back to the AI.
-- The exam has a fixed budget of attempts (default 10).
-- To pass, the strategy's **holdout alpha** must have a t-statistic above `t⁻¹(α / budget)`. Each attempt reveals only one bit, so this bar stays valid however adaptively the population evolved. The theory is in [*Deflate by Bits, Not Trials*](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7557458).
-- After the run, the verdict is graded:
-
-| Grade | Meaning |
-|---|---|
-| ✅ **PASS** | alpha t above the bar: an edge that survived out of sample |
-| 🟡 **PROMISING** | alpha t above 1 but below the bar: maybe real, not proven. The report says how many years of data a pass would need |
-| ❌ **FAIL** | no evidence of an edge |
-
-Most runs end with **no strategy passing**. That's the honest answer when nothing in the data survives out of sample, and it's exactly what other tools hide.
-
-### 🌍 The world exam: does it work on markets it has never seen?
-
-Three sealed years of one market rarely contain enough evidence to prove a realistic edge. So freeze
-a strategy and test it, unchanged, on **seven other stock markets**: the UK, the Eurozone, Japan, Hong
-Kong, Australia, Canada and Korea.
+## Quick start
 
 ```bash
-alphafinch world-exam runs/<timestamp>/champion.py --start 2017-10-02
+pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
+
+alphafinch demo                                # offline: synthetic market, no AI, no network (~1 min)
+alphafinch evolve --market us                  # S&P 500; AI provider auto-detected
+alphafinch evolve --market india               # NIFTY 200
+alphafinch world-exam runs/<run>/champion.py   # test a champion on 7 markets it has never seen
+alphafinch replay runs/<run>                   # re-watch a finished run as a short story
 ```
 
-Each market's alpha is measured against its own benchmark. The evidence is pooled across markets
-and judged at the same kind of bar. The pooled statistic is the *lower* of two methods, so a
-strategy has to convince both. It's calibrated with placebos: of 200 random strategies, none passed.
+Each run writes `runs/<timestamp>/report.html`: the champion, its family tree, the lab notebook, equity curves and the exam verdict.
 
-### Hindsight: why the AI may "know" the answers, and the forward test
+## How it works
 
-Language models have read about recent years, so an AI could favour stocks or styles it knows did well in the sealed period. AlphaFinch rejects any strategy that names a specific ticker or sector, and the AI only ever sees training results. A style-level leak is still possible, so the strongest test is the future:
-
-```bash
-alphafinch forward freeze runs/<timestamp>   # freeze the champion and team today
-alphafinch forward score                     # months later: judge them on data that didn't exist
+```
+ breed (training years) ─▶ choose (validation years) ─▶ 🔒 sealed exam ─▶ 🌍 world exam ─▶ ⏳ forward test
 ```
 
-## Bring any AI (or your Claude Code)
+**Breeding.** Four islands, each with a population of strategies. Every generation the AI **mutates** a parent using its report card, **crosses** two parents into one idea, or invents an **immigrant** from a fresh hypothesis. No-AI operators **tweak** a constant or **blend** two portfolios. Champions migrate between islands, and each island keeps the best strategy in every niche (fast or slow, market-neutral or market-hugging), so the population can't collapse onto one idea.
+
+**Fitness rewards a real edge, not a lucky one:**
+- **Alpha, not returns.** Each of four training eras is scored on its appraisal ratio: return beyond market exposure, per unit of risk. The *worst* era counts as much as the typical one.
+- **Broad, not narrow.** The portfolio is re-scored on random halves of the stocks, and the worst half counts.
+- **Stable, not knife-edge.** Parameters are nudged and neighbours re-scored. Penalties for heavy trading and bloated code.
+
+**The AI works like a researcher.** Every strategy starts with a written hypothesis. A lab notebook of every idea tried, and how it fared, goes into each prompt. A toolkit (`tk`) makes sector-neutral long/short books, residual returns and volatility targeting one-liners. Use `--strong-model` to give crossovers and new ideas to a bigger model.
+
+**Choosing the champion.** The last three training years are held back from breeding. The top ten finalists and a diversified team are scored once on those years, and the best becomes the champion. The AI never sees those scores.
+
+**The sealed exam.** The most recent three years. Each attempt reveals only PASS or FAIL, and the bar is t⁻¹(α / attempts), valid however adaptively the search ran ([the theory](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7557458)). Results are graded **PASS**, **PROMISING** (t > 1, with the years of data a pass would need) or **FAIL**.
+
+**The world exam.** Three years of one market can rarely prove a realistic edge. So a frozen strategy runs unchanged on seven other markets, and the evidence is pooled. The verdict uses the lower of two pooled t-statistics (Newey–West and Stouffer), so a strategy has to convince both. Calibrated with placebos: 0 of 200 random strategies passed.
+
+**The forward test.** `alphafinch forward freeze runs/<run>` today, `alphafinch forward score` in six months. No model has seen tomorrow's data.
+
+## Safety and honesty
+
+- **Sandbox:** AI-written code may import only `numpy`, `pandas` and `math`, with no file, network or dunder access. It runs in separate processes with restricted builtins, a CPU limit and a timeout.
+- **Look-ahead detector:** every strategy is re-run on truncated histories. If past weights change when future data is removed, it's discarded.
+- **No hindsight by name:** code that hard-codes a ticker or sector is rejected, so the AI can't simply pick stocks it knows did well.
+- **Costs:** 5 bps per unit of turnover. Weights act from the next close.
+- **Survivorship:** universes are *today's* index members. Alpha is measured against the same list, which limits the bias but doesn't remove it.
+
+## Bring any AI
 
 | `--provider` | Setup | Notes |
 |---|---|---|
-| `claude-code` | have [Claude Code](https://claude.com/claude-code) installed | no API key; uses your Claude subscription via `claude -p` |
-| `anthropic` | `ANTHROPIC_API_KEY=...` | default model `claude-opus-5-5` |
-| `openai` | `OPENAI_API_KEY=...` | choose with `--model` |
-| `ollama` | a local model at `localhost:11434` | free and private; default `qwen2.5-coder:14b` |
-| `compatible` | `--base-url ... --model ...` | any OpenAI-compatible server |
-| `none` | nothing | tweaks and blends only, fully offline |
+| `claude-code` | [Claude Code](https://claude.com/claude-code) installed | no API key; runs `claude -p` |
+| `anthropic` | `ANTHROPIC_API_KEY` | default `claude-opus-5-5` |
+| `openai` | `OPENAI_API_KEY` | pick with `--model` |
+| `ollama` | a local model at `localhost:11434` | free and private |
+| `compatible` | `--base-url … --model …` | any OpenAI-compatible server |
+| `none` | nothing | tweaks and blends only, offline |
 
-`--provider auto` (the default) picks the first one it finds. Inside Claude Code you can also just ask: *"evolve trading strategies on Indian stocks with alphafinch"*. A skill is included in [`integrations/claude-code`](integrations/claude-code).
+`--provider auto` (the default) uses the first one it finds. A Claude Code skill is included in [`integrations/claude-code`](integrations/claude-code).
 
-## Markets
+## Markets and data
 
-| `--market` | Universe | Free source, no key |
-|---|---|---|
-| `us` | S&P 500 (~430 with full history), since 2010, with sectors, macro data and SEC fundamentals | Yahoo Finance, FRED, SEC EDGAR |
-| `india` | NIFTY 200 (~140 with full history), since 2010, with sectors and macro data | Yahoo Finance (`.NS`), NSE, FRED |
-| `us30` | 30 US mega-caps, since 2008 | Yahoo Finance |
-| `uk` `europe` `japan` `hongkong` `australia` `canada` `korea` | FTSE 100, Eurozone large caps, Nikkei 225, Hang Seng, ASX 200, TSX 60, KOSPI 200 | Yahoo Finance |
-| `crypto` | 15 top coins vs USDT, since late 2020 | Binance public API |
-| `industries` | 49 US industry portfolios, since 1970 | Ken French Data Library |
-| `synthetic` | regime-switching simulated market | offline |
+All free, no keys:
 
-Or bring your own: `--tickers AAPL,MSFT,TSLA,...` (any Yahoo symbols). Data is cached in `~/.alphafinch`.
+| `--market` | Universe |
+|---|---|
+| `us` | S&P 500 since 2010, with SEC fundamentals (point-in-time, the day after each 10-K) |
+| `india` | NIFTY 200 since 2010 |
+| `uk` `europe` `japan` `hongkong` `australia` `canada` `korea` | FTSE 100, Eurozone large caps, Nikkei 225, Hang Seng, ASX 200, TSX 60, KOSPI 200 |
+| `us30` `crypto` `industries` `synthetic` | 30 US mega-caps, 15 coins, 49 US industries since 1970, simulated |
 
-Strategies get more than prices: `data.open/high/low/volume`, `data.sector`, `data.macro` (VIX, index, oil, gold, rates, yield curve, credit spreads, dollar or rupee) and, for `us`, `data.fund` (market cap, earnings yield, book-to-market, ROE, sales growth). Fundamentals are point-in-time: each value appears the day after its 10-K was filed.
+Strategies see `prices` plus `data.open/high/low/volume`, `data.sector`, `data.macro` (VIX, index, oil, gold, rates and more) and, for the US, `data.fund` (market cap, earnings yield, book-to-market, ROE, sales growth).
 
-**SEC fundamentals** need a contact email (the SEC asks every client for one):
+US fundamentals need a contact email, because the SEC asks every client for one: `export ALPHAFINCH_SEC_CONTACT="Your Name you@example.com"`.
 
-```bash
-export ALPHAFINCH_SEC_CONTACT="Your Name you@example.com"   # or pass --sec-contact
-```
-
-> ⚠️ **Survivorship bias.** The `us` and `india` lists are *today's* index members, so absolute returns look better than they would have in real time. Alpha is measured against the same list, which limits the damage. For serious research, use `industries`.
-
-## Safety: the AI writes code, so it runs in a sandbox
-
-- **Static checks:** only `numpy`, `pandas` and `math`; no file, network, process or dunder access.
-- **Process isolation:** each strategy runs in a separate process with restricted builtins, a CPU limit and a timeout.
-- **No hindsight by name:** strategies that hard-code a ticker or sector name are rejected.
-- **Look-ahead detector:** every strategy is re-run on truncated histories. If its past weights change when future data is removed (`shift(-1)`, centred windows, full-sample normalisation…), it's discarded as "peeked at the future" 💀.
-- **Realistic execution:** costs of 5 bps per unit of turnover, and weights act from the next close.
-
-## Write your own strategy
+## Write your own
 
 ```python
-import numpy as np, pandas as pd
-
-def strategy(prices, data=None):          # data is optional
-    """Calm Seeker: overweight the least volatile assets. Hypothesis: investors overpay for lottery-like stocks."""
-    WINDOW = 63
-    vol = prices.pct_change().rolling(WINDOW, min_periods=WINDOW).std()
-    inv = 1.0 / vol
-    return inv.div(inv.sum(axis=1), axis=0).fillna(0.0)
+def strategy(prices, data):
+    """Sector Spread: sector-neutral 6-month momentum. Hypothesis: news diffuses slowly within industries."""
+    score = tk.neutralize(tk.zscore(prices.pct_change(126)), data.sector)
+    return tk.rebalance(tk.long_short(score, q=0.2), every="M")
 ```
 
 ```bash
 alphafinch backtest my_strategy.py --market us
+alphafinch world-exam my_strategy.py
 ```
-
-## Real runs, pre-registered
-
-Every test below was committed to [`docs/`](docs) **before** it ran, with its bar and its success
-criterion, and every result is reported.
-
-**1. One market, three sealed years: nothing passed.** On the S&P 500 and the NIFTY 200, 0 of 10
-exam attempts passed ([details](docs/preregistration-v2.md)). The original search overfit: training
-scores rose while sealed-years alpha fell.
-
-**2. A better search.** Search v2 scores alpha instead of Sharpe ratio, chooses champions on years
-breeding never saw, demands the edge hold on random halves of the stocks, and gives the AI a
-quant toolkit. On a stand-in exam, v2 beat v1 in all 4 matched runs
-(mean alpha t +0.66 vs −0.41; [details](docs/search-ablation.md)).
-
-**3. The world exam: one strategy passed.** Five v2 strategies, bred only on data before 2017, were
-frozen and tested on seven markets they had never seen, from October 2017 to October 2026
-([details](docs/preregistration-world.md)).
-
-| | Alpha per year | t (bar 2.33) | Markets positive |
-|---|---|---|---|
-| ✅ **Quiet Sector Tether v2** | **+2.9%** | **3.40** | **7 of 7** |
-| 🟡 The Team (India) | +2.3% | 2.14 | 6 of 7 |
-| 🟡 Quiet Intraday Relay v2 | +0.9% | 1.03 | 5 of 7 |
-| ❌ two others | negative | | |
-
-*Quiet Sector Tether* buys, within each sector, the stocks that move least with the market and
-shorts those that move most. It's essentially **"betting against correlation"**, an anomaly AQR
-researchers published in 2020: the AI rediscovered it from pre-2017 US data, and it held up out of
-sample in seven other countries. It survives realistic trading costs (t 2.94 at 15 bps) and a
-causal beta hedge (t 3.22). After the six standard Fama–French factors its alpha is still +2.5% a
-year (t 2.64). It is weaker in the later years alone (2020–26: t 2.17, still 7 of 7 markets) and
-ignores short-borrowing fees.
-
-It's frozen in [`forward/`](forward) and will be judged again on data that doesn't exist yet.
 
 ## FAQ
 
-**Will this make me money?** Probably not, and AlphaFinch is built to tell you so. Most evolved strategies fail the sealed exam. Treat a PASS as a lead worth investigating, not a trading signal.
+**Will this make me money?** Probably not, and AlphaFinch is built to tell you so. A PASS is a lead worth researching, not a trading signal.
 
-**Why not just backtest on all the data?** Because with enough tries you'll always find something that worked by luck. The sealed exam is the only part of the run that can't be gamed.
+**Why not just backtest on all the data?** With enough tries, something always worked by luck. Only data the search never touched can tell luck from skill.
 
-**Can I run it longer?** Yes, try `--generations 100` overnight. More generations make better *training* strategies, but the exam bar doesn't move, so the verdict stays honest.
+**Can I re-run until something passes?** You can, but then the exam means nothing. Count your earlier looks (`--alpha`, `--prior-looks`) or test on new markets and new data.
 
-**Can I reuse the holdout after a run?** Don't. Once you've seen the results, re-running until something passes turns the holdout back into training data. Use later data or another market.
+## About
 
-## Disclaimer
+Built by [Shlok Sobti](https://github.com/shloksobti) at [Invsify](https://invsify.com), a SEBI-registered investment advisory in India. AlphaFinch is an independent open-source research project: nothing in this repository is investment advice or a recommendation from Invsify.
 
-Research and educational software, not investment advice. Backtests ignore taxes, borrow costs, capacity limits and slippage beyond the modelled costs.
+Research and educational software. Backtests ignore taxes, borrow costs, capacity limits and slippage beyond the modelled costs.
 
-## License
-
-MIT · built by [Shlok Sobti](https://github.com/shloksobti)
+MIT License.
