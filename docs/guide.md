@@ -16,6 +16,8 @@ overview, and `alphafinch <command> -h` for every option of one command.
 
 ## Install
 
+No install needed to try it: the [Colab quickstart](https://colab.research.google.com/github/shloksobti/alphafinch/blob/main/examples/quickstart.ipynb) runs in your browser.
+
 ```bash
 pip install "alphafinch[all]"
 alphafinch demo          # offline, no AI, no network: checks everything works

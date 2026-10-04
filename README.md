@@ -53,6 +53,8 @@ The caveats are in the [full write-up](docs/preregistration-world.md): it is wea
 
 ## Quick start
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shloksobti/alphafinch/blob/main/examples/quickstart.ipynb) **Try it in your browser first:** the quickstart notebook runs the demo, backtests a strategy on Indian stocks, shows its holdings and reproduces the world-exam result, with nothing to install.
+
 Needs Python 3.10+. No API keys or data subscriptions: market data is free and downloaded on first use. Prefer the latest code? `pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"`.
 
 ```bash
