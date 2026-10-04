@@ -36,6 +36,7 @@ import pandas as pd
 
 from .sandbox import ALLOWED_IMPORTS, SAFE_BUILTINS, StrategyError, check, check_names
 from .toolkit import TK
+from . import mandate as mandates
 
 COST_BPS = 5.0
 LEAK_CUTS = (0.55, 0.85)
@@ -44,7 +45,7 @@ _W: dict = {}
 
 
 # ------------------------------------------------------------------------------- worker side
-def _init(path: str, hold_start, val_start=None):
+def _init(path: str, hold_start, val_start=None, mandate=None, short_mask=None):
     try:
         import resource
         resource.setrlimit(resource.RLIMIT_CPU, (24 * 3600, 24 * 3600))
@@ -63,13 +64,17 @@ def _init(path: str, hold_start, val_start=None):
         m[rng.permutation(n)[: n // 2]] = True
         masks += [m, ~m]
     _W["halves"] = masks
+    _W["mandate"] = mandates.Mandate(**mandate) if mandate else None
+    _W["short_mask"] = None if short_mask is None else np.asarray(short_mask, bool)
 
 
 def _namespace(p) -> SimpleNamespace:
     cp = lambda x: None if x is None else x.copy()
     return SimpleNamespace(close=p.close.copy(), open=cp(p.open), high=cp(p.high), low=cp(p.low),
                            volume=cp(p.volume), sector=None if p.sector is None else p.sector.copy(),
-                           macro=cp(p.macro), fund={k: v.copy() for k, v in p.fund.items()})
+                           macro=cp(p.macro), fund={k: v.copy() for k, v in p.fund.items()},
+                           shortable=None if _W.get("short_mask") is None else
+                           pd.Series(_W["short_mask"], index=p.close.columns))
 
 
 def _imp(name, *a, **k):
@@ -93,8 +98,8 @@ def _weights(code: str, p) -> pd.DataFrame:
 
 
 def _normalise(w: pd.DataFrame) -> pd.DataFrame:
-    gross = w.abs().sum(axis=1)
-    return w.mul(np.where(gross > 1, 1 / gross.replace(0, 1), 1.0), axis=0)
+    """Project requested weights onto the Lab's mandate (default: gross exposure capped at 1)."""
+    return mandates.project(w, _W.get("mandate"), _W.get("short_mask"))
 
 
 def _simulate(w: pd.DataFrame, close: pd.DataFrame, cost_bps: float, halves=None):
@@ -102,7 +107,8 @@ def _simulate(w: pd.DataFrame, close: pd.DataFrame, cost_bps: float, halves=None
     held = _normalise(w).shift(1).fillna(0.0)
     trades = held.diff().abs()
     trades.iloc[0] = held.iloc[0].abs()
-    contrib = (held * rets).values - trades.values * cost_bps / 1e4
+    contrib = (held * rets).values - trades.values * cost_bps / 1e4 \
+        - mandates.carry_costs(held.values, _W.get("mandate"))
     r, turnover = contrib.sum(axis=1), trades.values.sum(axis=1)
     half_r = None
     if halves is not None:          # each half's sub-portfolio, scaled up to the full book's size
@@ -146,7 +152,7 @@ class Result:
 
 class Lab:
     def __init__(self, panel, holdout_start=None, workers: int = 4, timeout: float = 180.0, cost_bps=COST_BPS,
-                 ban_names: bool = True, validation_start=None):
+                 ban_names: bool = True, validation_start=None, mandate=None):
         self.ban_names = ban_names
         self.full = panel
         self.hold = pd.Timestamp(holdout_start) if holdout_start is not None else None
@@ -154,6 +160,11 @@ class Lab:
         self.val = pd.Timestamp(validation_start) if validation_start is not None else None
         self.train = panel.before(self.val) if self.val is not None else self.dev
         self.workers, self.timeout, self.cost_bps = workers, timeout, cost_bps
+        self.mandate = mandate
+        self.short_mask = None
+        if mandate is not None and mandate.shorts == "fno":
+            ok = set(mandate.shortable)
+            self.short_mask = [str(c) in ok for c in panel.columns]
         fd, self._path = tempfile.mkstemp(prefix="alphafinch_", suffix=".pkl")
         with os.fdopen(fd, "wb") as f:
             pickle.dump(panel, f)
@@ -170,7 +181,9 @@ class Lab:
     def _start(self):
         recycle = {"max_tasks_per_child": 60} if sys.version_info >= (3, 11) else {}   # free worker memory
         self._pool = ProcessPoolExecutor(self.workers, mp_context=mp.get_context("spawn"), initializer=_init,
-                                         initargs=(self._path, self.hold, self.val), **recycle)
+                                         initargs=(self._path, self.hold, self.val,
+                                                   None if self.mandate is None else self.mandate.to_dict(),
+                                                   self.short_mask), **recycle)
 
     def _restart(self):
         pool, self._pool = self._pool, None

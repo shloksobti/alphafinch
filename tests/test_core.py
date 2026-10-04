@@ -223,3 +223,32 @@ def test_world_exam_placebos_fail_and_errors_are_reported():
     assert res["fund"]["grade"] == "NOT RUN" and all("error" in v for v in res["fund"]["markets"].values())
     assert res["rnd"]["n_markets"] == 3 and res["rnd"]["K"] == 3
     assert res["rnd"]["bar"] > 2.0 and res["rnd"]["grade"] != "PASS"
+
+
+def test_mandate_projection_enforces_every_rule():
+    from alphafinch import mandate as md
+    rng = np.random.default_rng(0)
+    w = pd.DataFrame(rng.normal(0, 0.3, (50, 10)))
+    lo = md.project(w, md.get("long-only"))
+    assert (lo.values >= 0).all() and (lo.abs().sum(axis=1) <= 1 + 1e-9).all()
+    mn = md.project(w, md.get("market-neutral"))
+    assert (mn.sum(axis=1).abs() <= 0.1 + 1e-9).all() and (mn.abs().sum(axis=1) <= 1 + 1e-9).all()
+    mask = np.array([True] * 3 + [False] * 7)
+    fo = md.project(w, md.get("derivatives"), mask)
+    assert (fo.values[:, ~mask] >= 0).all() and (fo.abs().sum(axis=1) <= 2 + 1e-9).all()
+    cap = md.project(w, md.get("long-short", max_weight=0.05))
+    assert cap.abs().values.max() <= 0.05 + 1e-12
+
+
+def test_mandate_is_enforced_in_the_lab_and_charges_borrow():
+    from alphafinch import mandate as md
+    short_all = ("import pandas as pd\ndef strategy(prices):\n"
+                 "    return pd.DataFrame(-1/prices.shape[1], index=prices.index, columns=prices.columns)\n")
+    with Lab(_panel(), HOLD, workers=1, timeout=20, mandate=md.get("long-only")) as lb:
+        r = lb.run(short_all)
+        assert r.gross.abs().max() == 0 and r.returns.abs().max() == 0       # shorts are simply not allowed
+    with Lab(_panel(), HOLD, workers=1, timeout=20) as free, \
+            Lab(_panel(), HOLD, workers=1, timeout=20, mandate=md.get("long-short", borrow_bps=500)) as fee:
+        diff = (free.run(short_all).returns - fee.run(short_all).returns).iloc[5:]
+        assert np.allclose(diff, 0.05 / 252, rtol=0.05)                       # 500 bps a year on a full short
+    assert "NO SHORTING" in md.get("long-only").describe()

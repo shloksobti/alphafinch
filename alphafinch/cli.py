@@ -95,7 +95,10 @@ def cmd_evolve(args, demo=False):
         if (panel.index < val_start).sum() < 3 * 252:
             console.print("[red]Not enough history for a validation window; use --validation-years 0.[/]")
             return 1
-    with Lab(panel, hold_start, workers=args.lab_workers, validation_start=val_start) as lab:
+    mand = _mandate(args)
+    if mand is not None:
+        console.print(f"[bold]Mandate:[/] {mand.name}: {mand.describe()}")
+    with Lab(panel, hold_start, workers=args.lab_workers, validation_start=val_start, mandate=mand) as lab:
         exam = fitness.SealedExam(lab, budget=args.exam_budget, alpha=getattr(args, "alpha", 0.05))
         cfg = Config(islands=args.islands, island_size=args.island_size, offspring=args.offspring,
                      generations=args.generations, workers=args.workers, seed=args.seed,
@@ -122,7 +125,8 @@ def cmd_evolve(args, demo=False):
             meta.update(market=args.market, tickers=getattr(args, "tickers", None), start=getattr(args, "start", None),
                         end=getattr(args, "end", None), seed=args.seed, alpha=getattr(args, "alpha", 0.05), search=search,
                         validation_start=None if val_start is None else str(val_start.date()),
-                        champion_id=champ.id if champ else None, team_id=evo.team.id if evo.team else None)
+                        champion_id=champ.id if champ else None, team_id=evo.team.id if evo.team else None,
+                        mandate=None if mand is None else {k: v for k, v in mand.to_dict().items() if k != "shortable"})
             (out / "meta.json").write_text(json.dumps(meta, indent=1))
     passed = [a for a in exam.attempts if a["verdict"] == "PASS"]
     console.print()
@@ -137,11 +141,17 @@ def cmd_evolve(args, demo=False):
     return 0
 
 
+def _mandate(args):
+    from .mandate import for_market
+    return for_market(getattr(args, "mandate", None), args.market, max_gross=getattr(args, "max_gross", None),
+                      max_weight=getattr(args, "max_weight", None), borrow_bps=getattr(args, "borrow_bps", None))
+
+
 def cmd_backtest(args):
     panel = _load(args)
     hold = _holdout_start(panel, args.holdout_years, args.market)
     code = Path(args.file).read_text()
-    with Lab(panel, hold, workers=1) as lab:
+    with Lab(panel, hold, workers=1, mandate=_mandate(args)) as lab:
         try:
             res = lab.run(code, "train")
         except StrategyError as e:
@@ -215,7 +225,8 @@ def cmd_world_exam(args):
                   + (f" · {args.prior_looks} earlier looks counted" if args.prior_looks else ""))
     with console.status("[cyan]Running…") as stt:
         res = world.exam(strategies, markets, args.start, args.end, args.alpha, args.prior_looks,
-                         workers=args.lab_workers, progress=lambda n, m: stt.update(f"[cyan]{n} on {m}…"))
+                         workers=args.lab_workers, progress=lambda n, m: stt.update(f"[cyan]{n} on {m}…"),
+                         mandate=args.mandate)
     colours = {"PASS": "green", "PROMISING": "#9a6700", "FAIL": "red", "NOT RUN": "dim"}
     for r in res:
         console.print()
@@ -239,6 +250,15 @@ def cmd_world_exam(args):
     return 0
 
 
+def _mandate_args(sp):
+    sp.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives"],
+                    help="trading rules enforced by the engine: long-only = cash/spot market, no shorting; "
+                         "derivatives = shorts only in F&O stocks (India), up to 2x gross")
+    sp.add_argument("--max-gross", type=float, help="cap on gross exposure (leverage), overrides the mandate")
+    sp.add_argument("--max-weight", type=float, help="cap on any single position, e.g. 0.05")
+    sp.add_argument("--borrow-bps", type=float, help="annual borrow fee on shorts, in bps")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="alphafinch", description="Evolve trading strategies with AI, honestly.")
     sub = p.add_subparsers(dest="cmd")
@@ -251,6 +271,7 @@ def main(argv=None):
                         help="years sealed away for the exam (default 3; 1.5 for crypto)")
         sp.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
         sp.add_argument("--end", help="ignore all data after this date, e.g. 2023-10-01 (research on past periods)")
+        _mandate_args(sp)
 
     ev = sub.add_parser("evolve", help="evolve strategies")
     common(ev)
@@ -308,6 +329,7 @@ def main(argv=None):
                     help="strategies tested on these markets and years before (raises the bar)")
     we.add_argument("--lab-workers", type=int, default=4)
     we.add_argument("--json", help="also write results to this file")
+    we.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives"])
 
     sub.add_parser("markets", help="list built-in markets")
 

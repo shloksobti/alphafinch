@@ -55,6 +55,12 @@ def nifty(n: int = 200) -> pd.DataFrame:
     return pd.DataFrame({"symbol": df["Symbol"].str.strip() + ".NS", "sector": df["Industry"].str.strip()})
 
 
+def india_fno() -> list[str]:
+    """Stocks with single-stock futures on NSE, as Yahoo symbols. A snapshot of NSE's
+    fo_mktlots.csv (today's list, so not point-in-time), shipped with the package."""
+    return pd.read_csv(SNAPSHOTS / "india_fno.csv")["symbol"].tolist()
+
+
 def get(market: str) -> pd.DataFrame:
     if market == "us":
         return sp500()

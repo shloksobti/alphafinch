@@ -59,7 +59,8 @@ def market_run(lab: Lab, code: str, start: pd.Timestamp) -> dict:
 
 
 def exam(strategies: dict[str, str], markets=None, start="2017-10-02", end=None, alpha=0.05,
-         prior_looks: int = 0, lags: int = 10, workers: int = 4, progress=None, cost_bps: float = 5.0) -> list[dict]:
+         prior_looks: int = 0, lags: int = 10, workers: int = 4, progress=None, cost_bps: float = 5.0,
+         mandate: str | None = None) -> list[dict]:
     """Run every strategy on every market; return one pooled verdict per strategy."""
     """`markets` is a list of market names, or a dict {name: Panel} (offline use, tests)."""
     markets = markets or list(WORLD)
@@ -75,7 +76,9 @@ def exam(strategies: dict[str, str], markets=None, start="2017-10-02", end=None,
             for name in strategies:
                 per[name][mk] = {"error": "not enough data around the exam window"}
             continue
-        with Lab(panel, start, workers=workers, timeout=900, cost_bps=cost_bps) as lab:
+        from .mandate import for_market
+        with Lab(panel, start, workers=workers, timeout=900, cost_bps=cost_bps,
+                 mandate=for_market(mandate, mk)) as lab:
             for name, code in strategies.items():
                 if progress:
                     progress(name, mk)

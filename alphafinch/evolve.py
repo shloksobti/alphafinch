@@ -176,6 +176,8 @@ class Evolution:
                  on_event=None, strong: Provider | None = None):
         self.lab, self.exam, self.llm, self.strong, self.market, self.cfg = lab, exam, provider, strong, market, cfg
         self.data_desc = lab.train.describe()
+        if getattr(lab, "mandate", None) is not None:
+            self.data_desc += "\n- TRADING RULES (enforced by the engine): " + lab.mandate.describe()
         self.rng = random.Random(cfg.seed)
         self.islands: list[list[Individual]] = [[] for _ in range(cfg.islands)]
         self.all: dict[str, Individual] = {}
