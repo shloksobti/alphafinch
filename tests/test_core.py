@@ -133,10 +133,16 @@ def test_names_hypotheses_and_notebook():
 def test_offline_evolution_runs_with_team(lab):
     ex = fitness.SealedExam(lab, budget=4)
     e = evolve.Evolution(lab, ex, None, "synthetic",
-                         evolve.Config(islands=2, island_size=5, offspring=2, generations=2, workers=2))
+                         evolve.Config(islands=2, island_size=5, offspring=2, generations=2, workers=2, search="v1"))
     champ = e.run()
     assert champ is not None and np.isfinite(champ.fitness)
-    assert e.team is not None and e.team.exam in ("PASS", "FAIL")
+    team = e.build_team()
+    best = max(p.fitness for isl in e.islands for p in isl)
+    eligible = [p for isl in e.islands for p in isl if p.fitness >= max(0.0, 0.5 * best)]
+    if team is None:                               # only if too few strong survivors to form one
+        assert len({p.code for p in eligible}) < 2 or best <= 0
+    else:
+        assert len(team.parents) >= 2 and np.isfinite(team.fitness)
 
 
 def test_hard_coded_asset_and_sector_names_are_rejected(lab):

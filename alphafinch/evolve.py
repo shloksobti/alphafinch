@@ -30,6 +30,7 @@ import itertools
 import random
 import re
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -208,7 +209,7 @@ class Evolution:
 
     def robustness(self, ind: Individual):
         """Re-test with two nearby parameter settings; mark down knife-edge strategies."""
-        rng = random.Random(hash(ind.id) & 0xFFFF)
+        rng = random.Random(zlib.crc32(ind.code.encode()))      # deterministic across processes
         fits = []
         for _ in range(2):
             code = tweak(ind.code, rng)
