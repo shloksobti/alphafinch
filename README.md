@@ -6,6 +6,21 @@
 
 <img src="https://raw.githubusercontent.com/shloksobti/alphafinch/main/docs/demo.gif" alt="AlphaFinch: install, evolve strategies, and the sealed exam" width="900">
 
+<p>
+<a href="https://github.com/shloksobti/alphafinch/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/shloksobti/alphafinch/tests.yml?branch=main&label=tests&logo=github" alt="tests"></a>
+<a href="https://github.com/shloksobti/alphafinch"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white" alt="Python 3.10+"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
+<a href="https://github.com/shloksobti/alphafinch/stargazers"><img src="https://img.shields.io/github/stars/shloksobti/alphafinch?style=flat&logo=github" alt="GitHub stars"></a>
+<br>
+<a href="docs/preregistration-world.md"><img src="https://img.shields.io/badge/world%20exam-PASS%207%2F7%20markets-brightgreen" alt="World exam: PASS in 7 of 7 markets"></a>
+<a href="docs/"><img src="https://img.shields.io/badge/results-pre--registered-blueviolet" alt="Pre-registered results"></a>
+<a href="docs/guide.md#markets"><img src="https://img.shields.io/badge/markets-15%20(stocks%20%C2%B7%20futures%20%C2%B7%20crypto)-orange" alt="15 markets"></a>
+<a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7557458"><img src="https://img.shields.io/badge/paper-SSRN%207557458-b31b1b" alt="Paper on SSRN"></a>
+<br>
+<img src="https://img.shields.io/badge/AI-Claude%20Code%20%C2%B7%20Anthropic%20%C2%B7%20OpenAI%20%C2%B7%20Ollama-black" alt="AI providers">
+<img src="https://img.shields.io/badge/data-free%2C%20no%20API%20keys-informational" alt="Free data">
+</p>
+
 Works with **Claude Code**, **Anthropic**, **OpenAI**, **Ollama**, any OpenAI-compatible server, or **no AI at all**.
 
 </div>
