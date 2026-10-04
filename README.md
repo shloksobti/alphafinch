@@ -22,8 +22,8 @@ The catch with every AI trading demo: **evolution is the best overfitting machin
 
 We pre-registered every test before running it ([`docs/`](docs)) and report every result.
 
-- **One market, three sealed years: 0 of 10 passed** (S&P 500 and NIFTY 200). Training scores rose while out-of-sample alpha fell: overfitting, caught in the act.
-- **So we rebuilt the search** to score alpha, choose champions on years breeding never saw, and demand an edge that holds across random halves of the stocks. On a stand-in exam it beat the original search in 4 of 4 matched runs.
+- **One market, three sealed years: 0 of 10 passed** on the S&P 500 and NIFTY 200 ([details](docs/preregistration-v2.md); earlier runs on industries and India: 0 of 8, [details](docs/preregistration.md)). Training scores rose while out-of-sample alpha fell: overfitting, caught in the act.
+- **So we rebuilt the search** to score alpha, choose champions on years breeding never saw, and demand an edge that holds across random halves of the stocks. On a stand-in exam it beat the original search in 4 of 4 matched runs ([details](docs/search-ablation.md)).
 - **Then the world exam:** five strategies, bred only on data before 2017, were frozen and tested unchanged on **seven stock markets they had never seen**, from October 2017 to October 2026.
 
 | Strategy | Alpha / year | t (bar 2.33) | Markets with positive alpha | |
@@ -39,6 +39,8 @@ The caveats are in the [full write-up](docs/preregistration-world.md): it is wea
 
 ## Quick start
 
+Needs Python 3.10+. No API keys or data subscriptions: market data is free and downloaded on first use.
+
 ```bash
 pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
 
@@ -52,7 +54,22 @@ alphafinch world-exam runs/<run>/champion.py   # test it on 7 markets it has nev
 alphafinch replay runs/<run>                   # re-watch a finished run as a short story
 ```
 
-Each run writes `runs/<timestamp>/report.html`: the champion, its family tree, the lab notebook, equity curves and the exam verdict. The **[guide](docs/guide.md)** explains every command, market and option.
+Two choices shape every run: the **market** (a plain word, e.g. `india`) and the **rules** (flags, e.g. `--long-only`). Type `alphafinch` alone for an overview, `alphafinch evolve -h` for every option, or read the **[guide](docs/guide.md)**.
+
+**What a run takes.** The default run (20 generations × 4 islands) makes a few hundred AI calls and takes roughly 20–40 minutes. The first run on a market also downloads its data (a few minutes, then cached). With `claude-code` it uses your existing subscription; with an API key you pay your provider's usual rates.
+
+**What you get** in `runs/<timestamp>/`:
+
+| File | Contents |
+|---|---|
+| `report.html` | The morning report: champion, exam verdict, equity curves, the team, the lab notebook, the family tree |
+| `champion.py` | The champion's code, ready for `backtest`, `holdings` or `world-exam` |
+| `team.py` | A diversified team of survivors, when one forms |
+| `population.json` | Every strategy bred, with its scores |
+
+`alphafinch replay runs/<timestamp>` re-tells any finished run as a short story:
+
+<img src="docs/replay.gif" alt="alphafinch replay: the AI writing a strategy, a new champion, and the sealed exam" width="820">
 
 ## How it works
 
@@ -123,7 +140,7 @@ Free continuous futures prices fake big gains or losses at every contract roll: 
 
 All free, no keys:
 
-| `--market` | Universe |
+| Market | Universe |
 |---|---|
 | `us` | S&P 500 since 2010, with SEC fundamentals (point-in-time, the day after each 10-K) |
 | `india` | NIFTY 200 since 2010 |
@@ -131,6 +148,8 @@ All free, no keys:
 | `futures` | 39 global futures since 2012 |
 | `uk` `europe` `japan` `hongkong` `australia` `canada` `korea` | FTSE 100, Eurozone large caps, Nikkei 225, Hang Seng, ASX 200, TSX 60, KOSPI 200 |
 | `us30` `crypto` `industries` `synthetic` | 30 US mega-caps, 15 coins, 49 US industries since 1970, simulated |
+
+Or use your own list: `--tickers RELIANCE.NS,TCS.NS,INFY.NS` (any Yahoo symbols).
 
 Strategies see `prices` plus `data.open/high/low/volume`, `data.sector`, `data.macro` (VIX, index, oil, gold, rates and more) and, for the US, `data.fund` (market cap, earnings yield, book-to-market, ROE, sales growth).
 
@@ -145,10 +164,12 @@ def strategy(prices, data):
     return tk.rebalance(tk.long_short(score, q=0.2), every="M")
 ```
 
+A strategy returns, for every day, the fraction of capital to hold in each asset (negative means short). It may use `numpy`, `pandas`, `math` and the built-in toolkit `tk`, must never use future data, and may not name tickers. The [guide](docs/guide.md#writing-a-strategy) lists every field and toolkit function.
+
 ```bash
-alphafinch backtest my_strategy.py us
-alphafinch holdings my_strategy.py us
-alphafinch world-exam my_strategy.py
+alphafinch backtest my_strategy.py us      # training years only; the sealed years stay sealed
+alphafinch holdings my_strategy.py us      # what it wants to hold after the latest close
+alphafinch world-exam my_strategy.py       # 7 stock markets it has never seen
 ```
 
 ## FAQ
@@ -159,10 +180,30 @@ alphafinch world-exam my_strategy.py
 
 **Can I re-run until something passes?** You can, but then the exam means nothing. Count your earlier looks (`--alpha`, `--prior-looks`) or test on new markets and new data.
 
+**Does it tell me what to buy?** `alphafinch holdings` shows the positions a strategy wants today. That's the output of a research tool, not a recommendation: check the exam verdict and the caveats first.
+
+**Can I use my own data?** Any Yahoo symbols with `--tickers`. Other sources can be added in `alphafinch/data.py`, which returns a simple `Panel` of aligned tables.
+
+## Development
+
+```bash
+git clone https://github.com/shloksobti/alphafinch && cd alphafinch
+pip install -e ".[all,dev]"
+pytest -q                     # about 40 tests, offline, under a minute
+```
+
+Issues and pull requests are welcome: new markets, data sources, toolkit functions and exams especially.
+
+## Citation
+
+The sealed exam's bar comes from:
+
+> Shlok Sobti, *Deflate by Bits, Not Trials*, SSRN 7557458 (2026). [papers.ssrn.com/abstract=7557458](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7557458)
+
 ## About
 
 Built by [Shlok Sobti](https://github.com/shloksobti) at [Invsify](https://invsify.com), a SEBI-registered investment advisory in India. AlphaFinch is an independent open-source research project: nothing in this repository is investment advice or a recommendation from Invsify.
 
-Research and educational software. Backtests ignore taxes, borrow costs, capacity limits and slippage beyond the modelled costs.
+Research and educational software. Backtests ignore taxes, capacity limits and slippage beyond the modelled costs; borrow fees are charged only under `--market-neutral`.
 
 MIT License.
