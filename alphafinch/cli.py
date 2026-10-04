@@ -1,16 +1,4 @@
-"""alphafinch command line.
-
-  alphafinch demo                       offline demo, no AI and no network (about 1 minute)
-  alphafinch evolve --market us         evolve strategies (provider auto-detected)
-  alphafinch evolve --market india      Indian stocks (NIFTY 200)
-  alphafinch backtest my_strategy.py    backtest one strategy file on the training period
-  alphafinch replay runs/<timestamp>    re-animate a finished run as a short story
-  alphafinch forward freeze runs/<ts>   freeze a run's champion and team for a forward test
-  alphafinch forward score              judge frozen strategies on data after their freeze date
-  alphafinch world-exam a.py b.py       test frozen strategies on 7 stock markets they've never seen
-  alphafinch holdings strategy.py       what the strategy wants to hold today
-  alphafinch markets                    list built-in markets
-"""
+"""alphafinch command line. Run `alphafinch` with no arguments for an overview."""
 from __future__ import annotations
 
 import argparse
@@ -34,7 +22,8 @@ console = Console()
 MARKET_LABEL = {"us": "US stocks (S&P 500)", "india": "Indian stocks (NIFTY 200)", "us30": "30 US mega-caps",
                 "crypto": "Crypto vs USDT", "industries": "49 US industry portfolios (Ken French)",
                 "synthetic": "Synthetic market (offline)",
-                "futures": "Futures: 39 contracts across equities, rates, FX, energy, metals, agriculture",
+                "futures": "39 futures: stock indices, government bonds, currencies, energy, metals, agriculture",
+                "india-futures": "NSE futures: NIFTY, BANKNIFTY and every F&O stock",
                 **WORLD}
 
 
@@ -262,7 +251,7 @@ def cmd_world_exam(args):
     with console.status("[cyan]Running…") as stt:
         res = world.exam(strategies, markets, args.start, args.end, args.alpha, args.prior_looks,
                          workers=args.lab_workers, progress=lambda n, m: stt.update(f"[cyan]{n} on {m}…"),
-                         mandate=args.mandate)
+                         mandate=_mandate_name(args))
     colours = {"PASS": "green", "PROMISING": "#9a6700", "FAIL": "red", "NOT RUN": "dim"}
     for r in res:
         console.print()
@@ -286,97 +275,149 @@ def cmd_world_exam(args):
     return 0
 
 
-def _mandate_args(sp):
-    sp.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives", "futures"],
-                    help="trading rules enforced by the engine: long-only = cash/spot market, no shorting; "
-                         "derivatives = shorts only in F&O stocks (India), up to 2x gross")
-    sp.add_argument("--max-gross", type=float, help="cap on gross exposure (leverage), overrides the mandate")
-    sp.add_argument("--max-weight", type=float, help="cap on any single position, e.g. 0.05")
-    sp.add_argument("--borrow-bps", type=float, help="annual borrow fee on shorts, in bps")
+HELP = """[bold]AlphaFinch[/]: AI evolves trading strategies, then they sit an exam they can't cheat.
+
+  [cyan]alphafinch demo[/]                    try it offline (about a minute)
+  [cyan]alphafinch evolve india[/]            evolve strategies on a market
+  [cyan]alphafinch evolve india --long-only[/] same, but no shorting
+  [cyan]alphafinch backtest my.py india[/]    test one strategy
+  [cyan]alphafinch holdings my.py india[/]    what it wants to hold today
+  [cyan]alphafinch world-exam my.py[/]        test it on 7 markets it never saw
+  [cyan]alphafinch replay runs/<run>[/]       re-watch a finished run
+  [cyan]alphafinch markets[/]                 list markets
+
+Rules: --long-only · --market-neutral · --max-position 5% · --leverage 2
+Help for one command: [cyan]alphafinch evolve -h[/] · guide: docs/guide.md"""
+
+
+def _mandate_name(args):
+    return "long-only" if args.long_only else "market-neutral" if args.market_neutral else None
+
+
+def _percent(x: str) -> float:
+    x = x.strip()
+    return float(x[:-1]) / 100 if x.endswith("%") else float(x)
+
+
+def _mandate(args):
+    from .mandate import for_market
+    name = "long-only" if getattr(args, "long_only", False) else \
+        "market-neutral" if getattr(args, "market_neutral", False) else None
+    return for_market(name, args.market, max_gross=getattr(args, "leverage", None),
+                      max_weight=getattr(args, "max_position", None), borrow_bps=getattr(args, "borrow_bps", None))
+
+
+def _rules(sp):
+    g = sp.add_argument_group("trading rules (enforced by the engine)")
+    x = g.add_mutually_exclusive_group()
+    x.add_argument("--long-only", action="store_true", help="no shorting, no leverage (cash / spot market)")
+    x.add_argument("--market-neutral", action="store_true", help="equal longs and shorts (net exposure within ±10%%)")
+    g.add_argument("--max-position", type=_percent, metavar="PCT", help="cap on any single position, e.g. 5%%")
+    g.add_argument("--leverage", type=float, metavar="X", help="cap on gross exposure, e.g. 2 (default 1; 3 for futures)")
+    g.add_argument("--borrow-bps", type=float, help=argparse.SUPPRESS)
+
+
+def _market(sp, default="us"):
+    sp.add_argument("market_pos", nargs="?", metavar="market", choices=list(MARKET_LABEL),
+                    help=f"one of: {', '.join(MARKET_LABEL)} (default {default})")
+    sp.add_argument("--market", dest="market_opt", choices=list(MARKET_LABEL), help=argparse.SUPPRESS)
+    sp.set_defaults(market_default=default)
+
+
+def _data_opts(sp):
+    g = sp.add_argument_group("data")
+    g.add_argument("--tickers", help="your own comma-separated Yahoo symbols instead of the market's list")
+    g.add_argument("--start", help="first date to use, e.g. 2012-01-01")
+    g.add_argument("--end", help="ignore all data after this date (research on past periods)")
+    g.add_argument("--holdout-years", type=float, default=None, help="years sealed for the exam (default 3)")
+    g.add_argument("--sec-contact", help='US fundamentals: "Name email" for the SEC (or set ALPHAFINCH_SEC_CONTACT)')
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="alphafinch", description="Evolve trading strategies with AI, honestly.")
+    p = argparse.ArgumentParser(prog="alphafinch", add_help=False)
+    p.add_argument("-h", "--help", action="store_true")
     sub = p.add_subparsers(dest="cmd")
 
-    def common(sp):
-        sp.add_argument("--market", default="us", choices=list(MARKET_LABEL))
-        sp.add_argument("--tickers", help="comma-separated Yahoo symbols (overrides the market's universe)")
-        sp.add_argument("--start", help="first date to use, e.g. 2012-01-01")
-        sp.add_argument("--holdout-years", type=float, default=None,
-                        help="years sealed away for the exam (default 3; 1.5 for crypto)")
-        sp.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
-        sp.add_argument("--end", help="ignore all data after this date, e.g. 2023-10-01 (research on past periods)")
-        _mandate_args(sp)
-
-    ev = sub.add_parser("evolve", help="evolve strategies")
-    common(ev)
-    ev.add_argument("--provider", default="auto",
+    ev = sub.add_parser("evolve", usage="alphafinch evolve [market] [options]", help="evolve strategies on a market")
+    _market(ev)
+    _rules(ev)
+    ai = ev.add_argument_group("AI (auto-detected by default)")
+    ai.add_argument("--provider", default="auto",
                     choices=["auto", "anthropic", "openai", "ollama", "compatible", "claude-code", "none"])
-    ev.add_argument("--model")
-    ev.add_argument("--strong-model", help="model for crossovers and new ideas, e.g. opus")
-    ev.add_argument("--base-url")
-    ev.add_argument("--api-key")
-    ev.add_argument("--generations", type=int, default=20)
-    ev.add_argument("--islands", type=int, default=4)
-    ev.add_argument("--island-size", type=int, default=8)
-    ev.add_argument("--offspring", type=int, default=4, help="children per island per generation")
-    ev.add_argument("--exam-budget", type=int, default=10)
-    ev.add_argument("--alpha", type=float, default=0.05, help="false-certification rate of the sealed exam")
-    ev.add_argument("--workers", type=int, default=6, help="parallel AI requests")
-    ev.add_argument("--lab-workers", type=int, default=4, help="parallel backtest processes")
-    ev.add_argument("--seed", type=int, default=0)
-    ev.add_argument("--out", default="runs")
-    ev.add_argument("--no-team", action="store_true", help="skip building a team of survivors at the end")
-    ev.add_argument("--no-reveal", action="store_true", help="skip the animated exam reveal at the end")
-    ev.add_argument("--search", default="v2", choices=["v2", "v1"],
-                    help="v2 (default): alpha fitness, random-halves check, validation, toolkit. v1: the original search")
-    ev.add_argument("--validation-years", type=float, default=None,
-                    help="years before the holdout used to choose the champion, never for breeding (default 3; 0 = off)")
+    ai.add_argument("--model", help="model for routine mutations")
+    ai.add_argument("--strong-model", help="bigger model for crossovers and new ideas, e.g. opus")
+    ai.add_argument("--base-url", help="for --provider compatible")
+    ai.add_argument("--api-key")
+    size = ev.add_argument_group("run size")
+    size.add_argument("--generations", type=int, default=20)
+    size.add_argument("--islands", type=int, default=4)
+    size.add_argument("--island-size", type=int, default=8)
+    size.add_argument("--offspring", type=int, default=4, help="children per island per generation")
+    size.add_argument("--workers", type=int, default=6, help="parallel AI requests")
+    size.add_argument("--lab-workers", type=int, default=4, help="parallel backtest processes")
+    exam = ev.add_argument_group("exam")
+    exam.add_argument("--exam-budget", type=int, default=10, help="attempts allowed on the sealed years")
+    exam.add_argument("--alpha", type=float, default=0.05, help="chance of certifying a fluke (default 0.05)")
+    _data_opts(ev)
+    more = ev.add_argument_group("other")
+    more.add_argument("--seed", type=int, default=0)
+    more.add_argument("--out", default="runs", help="where run reports go")
+    more.add_argument("--no-team", action="store_true", help=argparse.SUPPRESS)
+    more.add_argument("--no-reveal", action="store_true", help="skip the animated exam reveal")
+    more.add_argument("--search", default="v2", choices=["v2", "v1"], help=argparse.SUPPRESS)
+    more.add_argument("--validation-years", type=float, default=None, help=argparse.SUPPRESS)
 
     dm = sub.add_parser("demo", help="offline demo on a synthetic market (no AI, no network)")
     dm.add_argument("--generations", type=int, default=12)
     dm.add_argument("--out", default="runs")
 
-    bt = sub.add_parser("backtest", help="backtest one strategy file")
+    bt = sub.add_parser("backtest", usage="alphafinch backtest FILE [market] [options]", help="test one strategy file on the training years")
     bt.add_argument("file")
-    common(bt)
+    _market(bt)
+    _rules(bt)
+    _data_opts(bt)
 
-    rp = sub.add_parser("replay", help="re-animate a finished run as a short cinematic story")
-    rp.add_argument("run", help="run directory, e.g. runs/20261003-231730")
-    rp.add_argument("--speed", type=float, default=1.0)
-    rp.add_argument("--width", type=int, default=118)
-    rp.add_argument("--market", help="only for runs saved before meta.json existed")
-    rp.add_argument("--holdout-years", type=float, default=None)
-
-    fw = sub.add_parser("forward", help="forward test: freeze strategies now, judge them on future data")
-    fw.add_argument("action", choices=["freeze", "score"])
-    fw.add_argument("run", nargs="?", help="run directory to freeze")
-    fw.add_argument("--dir", default="forward", help="where frozen strategies live")
-    fw.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
-
-    we = sub.add_parser("world-exam", help="test frozen strategies on many markets they have never seen")
-    we.add_argument("files", nargs="+", help="strategy .py files")
-    we.add_argument("--markets", default="all", help=f"comma-separated, default all: {','.join(WORLD)}")
-    we.add_argument("--start", default="2017-10-02", help="first day of the exam window")
-    we.add_argument("--end", help="last day of the exam window (default: latest data)")
-    we.add_argument("--alpha", type=float, default=0.05)
-    we.add_argument("--prior-looks", type=int, default=0,
-                    help="strategies tested on these markets and years before (raises the bar)")
-    we.add_argument("--lab-workers", type=int, default=4)
-    we.add_argument("--json", help="also write results to this file")
-    we.add_argument("--mandate", choices=["long-only", "long-short", "market-neutral", "derivatives", "futures"])
-
-    hd = sub.add_parser("holdings", help="what a strategy wants to hold today")
+    hd = sub.add_parser("holdings", usage="alphafinch holdings FILE [market] [options]", help="what a strategy wants to hold today")
     hd.add_argument("file")
-    common(hd)
+    _market(hd)
+    _rules(hd)
+    _data_opts(hd)
     hd.add_argument("--top", type=int, default=10, help="show the top and bottom N positions")
     hd.add_argument("--all", action="store_true", help="show every position")
     hd.add_argument("--days", type=int, default=5, help="compare with N trading days ago")
 
-    sub.add_parser("markets", help="list built-in markets")
+    we = sub.add_parser("world-exam", usage="alphafinch world-exam FILE [FILE...] [options]", help="test strategies on 7 stock markets they have never seen")
+    we.add_argument("files", nargs="+", help="strategy .py files")
+    _rules(we)
+    we.add_argument("--markets", default="all", help=f"comma-separated, default all: {','.join(WORLD)}")
+    we.add_argument("--start", default="2017-10-02", help="first day of the exam window")
+    we.add_argument("--end", help="last day of the exam window (default: latest data)")
+    we.add_argument("--alpha", type=float, default=0.05)
+    we.add_argument("--prior-looks", type=int, default=0, help="earlier tests on these markets and years")
+    we.add_argument("--lab-workers", type=int, default=4)
+    we.add_argument("--json", help="also write results to this file")
+
+    rp = sub.add_parser("replay", help="re-watch a finished run as a short story")
+    rp.add_argument("run", help="run directory, e.g. runs/20261003-231730")
+    rp.add_argument("--speed", type=float, default=1.0)
+    rp.add_argument("--width", type=int, default=118)
+    rp.add_argument("--market", help=argparse.SUPPRESS)
+    rp.add_argument("--holdout-years", type=float, default=None, help=argparse.SUPPRESS)
+
+    fw = sub.add_parser("forward", help="freeze winners now, judge them on future data")
+    fw.add_argument("action", choices=["freeze", "score"])
+    fw.add_argument("run", nargs="?", help="run directory to freeze")
+    fw.add_argument("--dir", default="forward", help="where frozen strategies live")
+    fw.add_argument("--sec-contact", help=argparse.SUPPRESS)
+
+    sub.add_parser("markets", help="list markets")
 
     args = p.parse_args(argv)
+    if hasattr(args, "market_pos"):
+        args.market = args.market_pos or args.market_opt or args.market_default
+    if args.cmd is None or args.help:
+        console.print(HELP)
+        return 0
     if args.cmd == "evolve":
         return cmd_evolve(args)
     if args.cmd == "demo":
@@ -397,10 +438,16 @@ def main(argv=None):
     if args.cmd == "holdings":
         return cmd_holdings(args)
     if args.cmd == "markets":
-        for k, v in MARKET_LABEL.items():
-            console.print(f"[bold]{k:11s}[/] {v}")
+        from rich.table import Table
+        t = Table(show_edge=False, pad_edge=False, show_header=False)
+        groups = [("Stocks", ["us", "india", "uk", "europe", "japan", "hongkong", "australia", "canada", "korea", "us30"]),
+                  ("Futures", ["futures", "india-futures"]), ("Other", ["crypto", "industries", "synthetic"])]
+        for title, keys in groups:
+            t.add_row(f"[bold]{title}[/]", "")
+            for k in keys:
+                t.add_row(f"  [cyan]{k}[/]", MARKET_LABEL[k])
+        console.print(t)
         return 0
-    p.print_help()
     return 0
 
 

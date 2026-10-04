@@ -259,3 +259,13 @@ def test_holdings_respect_the_mandate():
     with Lab(_panel(), None, workers=1, timeout=20, mandate=md.get("long-only")) as lb:
         w = lb.weights(SEEDS["Snapback"], last=3)          # a long/short seed
         assert len(w) == 3 and (w.values >= 0).all() and (w.abs().sum(axis=1) <= 1 + 1e-9).all()
+
+
+def test_broken_split_adjustments_are_repaired_but_real_crashes_are_not():
+    idx = pd.bdate_range("2020-01-01", periods=30)
+    px = pd.DataFrame({"glitch": 100.0, "crash": 100.0}, index=idx)
+    px.iloc[10:13, 0] = 10.0                        # -90% then back: a bad split adjustment
+    px.iloc[10:, 1] = 40.0                          # a real -60% crash that stays down
+    fixed, fixes = data.repair_splits(px)
+    assert np.allclose(fixed["glitch"], 100.0) and [f[0] for f in fixes] == ["glitch"]
+    assert (fixed["crash"] == px["crash"]).all()

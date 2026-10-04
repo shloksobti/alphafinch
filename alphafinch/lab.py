@@ -40,6 +40,7 @@ from . import mandate as mandates
 
 COST_BPS = 5.0
 LEAK_CUTS = (0.55, 0.85)
+ASSET_CLASSES = {"equity", "rates", "fx", "energy", "metals", "agriculture"}
 N_SPLITS = 2              # random partitions of the universe -> 2 * N_SPLITS halves
 _W: dict = {}
 
@@ -180,8 +181,8 @@ class Lab:
         self._pool = None
         self._start()
         names = {str(c) for c in panel.columns}
-        if ban_sectors is None:          # futures: asset classes are structure, not stock-picking by memory
-            ban_sectors = "FUTURES" not in getattr(panel, "note", "")
+        if ban_sectors is None:          # asset classes are structure, not stock-picking by memory
+            ban_sectors = panel.sector is None or not set(map(str, panel.sector.unique())) <= ASSET_CLASSES
         if ban_sectors and panel.sector is not None and panel.sector.nunique() > 1:
             names |= {str(x) for x in panel.sector.unique()}
         names |= {n.split(".")[0] for n in names if n.endswith(".NS")}       # RELIANCE as well as RELIANCE.NS

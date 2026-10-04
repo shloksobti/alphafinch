@@ -43,15 +43,16 @@ The caveats are in the [full write-up](docs/preregistration-world.md): it is wea
 pip install "alphafinch[all] @ git+https://github.com/shloksobti/alphafinch"
 
 alphafinch demo                                # offline: synthetic market, no AI, no network (~1 min)
-alphafinch evolve --market us                  # S&P 500; AI provider auto-detected
-alphafinch evolve --market india               # NIFTY 200
-alphafinch evolve --market futures             # 39 futures: equities, rates, FX, energy, metals, agriculture
-alphafinch world-exam runs/<run>/champion.py   # test a champion on 7 markets it has never seen
-alphafinch holdings runs/<run>/champion.py --market india   # what it wants to hold today
+alphafinch evolve india                        # NIFTY 200 stocks; AI provider auto-detected
+alphafinch evolve india --long-only            # same, but no shorting (cash market)
+alphafinch evolve india-futures                # NSE futures: NIFTY, BANKNIFTY, every F&O stock
+alphafinch evolve futures                      # 39 global futures: indices, bonds, FX, commodities
+alphafinch holdings runs/<run>/champion.py india   # what the champion wants to hold today
+alphafinch world-exam runs/<run>/champion.py   # test it on 7 markets it has never seen
 alphafinch replay runs/<run>                   # re-watch a finished run as a short story
 ```
 
-Each run writes `runs/<timestamp>/report.html`: the champion, its family tree, the lab notebook, equity curves and the exam verdict.
+Each run writes `runs/<timestamp>/report.html`: the champion, its family tree, the lab notebook, equity curves and the exam verdict. The **[guide](docs/guide.md)** explains every command, market and option.
 
 ## How it works
 
@@ -76,25 +77,26 @@ Each run writes `runs/<timestamp>/report.html`: the champion, its family tree, t
 
 **The forward test.** `alphafinch forward freeze runs/<run>` today, `alphafinch forward score` in six months. No model has seen tomorrow's data.
 
-## Trading rules (mandates)
+## Trading rules
 
-Real investors have constraints. A mandate is enforced by the engine on every strategy's weights, so a strategy can never break the rules and still look good. The AI is told the rules too, so it designs within them.
+Two choices shape every run: the **market** (*what* can be traded) and the **rules** (*how*). Rules are enforced by the engine on every strategy's positions, so a strategy can't break them and still look good, and the AI is told them up front.
 
-| `--mandate` | Rules |
+| Flag | Rule |
 |---|---|
-| `long-only` | Cash / spot market: no shorting, no leverage. Realistic for most retail investors, e.g. in India, where cash-market shorts can't be held overnight |
-| `long-short` | Shorts allowed, with a 0.5%/yr borrow fee on short positions |
-| `market-neutral` | Long/short with net market exposure held within ±10% |
-| `derivatives` | Shorts only where single-stock futures exist (India: the NSE F&O list), up to 2× gross, 3%/yr financing above 1× |
-| `futures` | Default for `--market futures`: shorting is free, up to 3× gross (margin) |
+| *(none)* | Long or short, up to 1× capital |
+| `--long-only` | Buy only, no leverage: the cash / spot market |
+| `--market-neutral` | Longs and shorts roughly equal, with a borrow fee on shorts |
+| `--max-position 5%` | No single position above 5% |
+| `--leverage 2` | Total exposure up to 2× capital |
 
-Fine-tune with `--max-gross`, `--max-weight 0.05` and `--borrow-bps`. Mandates work with `evolve`, `backtest`, `holdings` and `world-exam`.
+Futures markets get futures rules automatically: shorting is as easy as buying, up to 3× exposure.
 
 ## Futures
 
-`--market futures` gives the AI 39 futures across equity indices, government bonds, currencies, energy, metals and agriculture, so it can test hypotheses like trend-following, crisis alpha, carry or cross-asset signals.
+- `futures`: 39 global futures across stock indices, government bonds, currencies, energy, metals and agriculture, for hypotheses like trend-following, crisis alpha, carry or cross-asset signals.
+- `india-futures`: NSE futures, NIFTY and BANKNIFTY plus every F&O stock.
 
-Free continuous futures prices splice contracts without adjusting for the roll, which creates fake jumps: on Yahoo's natural-gas series a rolled position "earned" +20% a year when it really lost 12%. So AlphaFinch builds each future from a fund that holds and rolls the real contracts, converted to excess returns over T-bills, which is what a futures position earns.
+Free continuous futures prices fake big gains or losses at every contract roll: on Yahoo's natural-gas series a rolled position "earned" +20% a year when it really lost 12%. So AlphaFinch builds futures from funds that hold and roll the real contracts (and Indian stock futures from each stock's total return), converted to excess returns over the short-term interest rate, which is what a futures position earns.
 
 ## Safety and honesty
 
@@ -125,6 +127,8 @@ All free, no keys:
 |---|---|
 | `us` | S&P 500 since 2010, with SEC fundamentals (point-in-time, the day after each 10-K) |
 | `india` | NIFTY 200 since 2010 |
+| `india-futures` | NSE futures: NIFTY, BANKNIFTY and every F&O stock, since 2012 |
+| `futures` | 39 global futures since 2012 |
 | `uk` `europe` `japan` `hongkong` `australia` `canada` `korea` | FTSE 100, Eurozone large caps, Nikkei 225, Hang Seng, ASX 200, TSX 60, KOSPI 200 |
 | `us30` `crypto` `industries` `synthetic` | 30 US mega-caps, 15 coins, 49 US industries since 1970, simulated |
 
@@ -142,7 +146,8 @@ def strategy(prices, data):
 ```
 
 ```bash
-alphafinch backtest my_strategy.py --market us
+alphafinch backtest my_strategy.py us
+alphafinch holdings my_strategy.py us
 alphafinch world-exam my_strategy.py
 ```
 

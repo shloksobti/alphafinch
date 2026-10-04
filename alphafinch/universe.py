@@ -86,6 +86,16 @@ def futures() -> pd.DataFrame:
     return pd.DataFrame([{"symbol": s, "sector": cls, "name": nm} for cls, d in FUTURES.items() for s, nm in d.items()])
 
 
+def india_futures() -> pd.DataFrame:
+    """NSE futures: every stock with single-stock futures, plus NIFTY and BANKNIFTY index futures
+    (represented by index funds that include dividends)."""
+    sectors = nifty(500).set_index("symbol")["sector"]
+    fno = india_fno()
+    rows = [{"symbol": s, "sector": sectors.get(s, "Unknown")} for s in fno]
+    rows += [{"symbol": "NIFTYBEES.NS", "sector": "Index"}, {"symbol": "BANKBEES.NS", "sector": "Index"}]
+    return pd.DataFrame(rows)
+
+
 def get(market: str) -> pd.DataFrame:
     if market == "us":
         return sp500()
@@ -97,6 +107,8 @@ def get(market: str) -> pd.DataFrame:
         return pd.DataFrame({"symbol": CRYPTO, "sector": "Crypto"})
     if market == "futures":
         return futures()
+    if market == "india-futures":
+        return india_futures()
     if market in WORLD:
         return pd.read_csv(SNAPSHOTS / f"{market}.csv", dtype=str)
     raise ValueError(market)

@@ -78,7 +78,7 @@ def get(name: str | None, **overrides) -> Mandate:
 def for_market(name: str | None, market: str, **overrides) -> Mandate | None:
     """Resolve a preset for a market. 'derivatives' shorts only F&O stocks in India; elsewhere
     any stock (via borrow or single-stock futures/CFDs)."""
-    if name is None and market == "futures":
+    if name is None and market in ("futures", "india-futures"):
         name = "futures"
     if name is None and not any(v is not None for v in overrides.values()):
         return None

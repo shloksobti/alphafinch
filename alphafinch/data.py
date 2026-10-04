@@ -40,7 +40,7 @@ def _sec_headers():
     contact = os.environ.get("ALPHAFINCH_SEC_CONTACT")
     return {"User-Agent": f"alphafinch {contact}"} if contact else None
 DEFAULT_START = {"us": "2010-01-01", "india": "2010-01-01", "us30": "2008-04-01", "crypto": "2020-10-01",
-                 "industries": "1970-01-01", "futures": "2012-03-01", **{m: "2010-01-01" for m in uni.WORLD}}
+                 "industries": "1970-01-01", "futures": "2012-03-01", "india-futures": "2012-01-01", **{m: "2010-01-01" for m in uni.WORLD}}
 WORLD_INDEX = {"uk": "^FTSE", "europe": "^STOXX50E", "japan": "^N225", "hongkong": "^HSI", "australia": "^AXJO",
                "canada": "^GSPTSE", "korea": "^KS11"}
 
@@ -54,6 +54,7 @@ MACRO = {
     "crypto": {"yahoo": {"vix": "^VIX", "index": "^GSPC"}, "fred": {"rate_10y": ("DGS10", 1)}},
 }
 MACRO["futures"] = MACRO["us"]
+MACRO["india-futures"] = MACRO["india"]
 for _m, _ix in WORLD_INDEX.items():         # world markets: local index; the US VIX as the global fear gauge
     MACRO[_m] = {"yahoo": {"vix": "^VIX", "index": _ix, "oil": "CL=F", "gold": "GC=F"},
                  "fred": {"us_rate_10y": ("DGS10", 1)}}
@@ -326,6 +327,24 @@ def _macro(market: str, idx: pd.DatetimeIndex) -> pd.DataFrame:
     return m.reindex(m.index.union(idx)).ffill().reindex(idx)
 
 
+def repair_splits(close: pd.DataFrame) -> tuple[pd.DataFrame, list]:
+    """Undo broken split adjustments: a move of 80% or more (down, or 5x up) that fully reverses
+    within 5 days is a data error, not a market event (e.g. Yahoo's NIFTYBEES 1:10 split, Dec 2019).
+    Returns the repaired prices and a list of (asset, date, move) repairs."""
+    lr = np.log(close.astype("float64")).diff()
+    out, fixes = close.astype("float64").copy(), []
+    for c in lr.columns:
+        s = lr[c].values
+        for i in np.where(np.abs(s) > np.log(5))[0]:
+            back = np.nancumsum(s[i + 1:i + 6])
+            j = np.where(np.abs(s[i] + back) < 0.15)[0]
+            if len(j):
+                end = i + 1 + j[0]
+                out.iloc[i:end, out.columns.get_loc(c)] /= np.exp(s[i])
+                fixes.append((str(c), str(lr.index[i].date()), float(np.exp(s[i]) - 1)))
+    return out, fixes
+
+
 def build(market: str, tickers=None, start=None, progress=None) -> Panel:
     start = start or DEFAULT_START.get(market)
     if market == "synthetic":
@@ -356,8 +375,14 @@ def build(market: str, tickers=None, start=None, progress=None) -> Panel:
     if market != "crypto":
         close = close[close.index.dayofweek < 5]
     close = close.dropna(axis=1, thresh=int(0.95 * len(close))).ffill(limit=5).dropna(how="any")
+    raw = close
+    close, fixes = repair_splits(close)
+    for c, d, mv in fixes:
+        print(f"  repaired a broken split adjustment: {c} on {d} ({mv:+.0%}, reversed within days)")
     keep, idx = close.columns, close.index
-    pick = lambda k: pd.DataFrame({s: frames[s][k] for s in keep}).reindex(idx).ffill(limit=5)
+    fix = close / raw.astype("float64")                       # 1 except inside repaired stretches
+    pick = lambda k: pd.DataFrame({s: frames[s][k] for s in keep}).reindex(idx).ffill(limit=5) * \
+        (fix if k in ("open", "high", "low") else 1)
     sector = univ.set_index("symbol")["sector"].reindex(keep).fillna("Unknown")
     panel = Panel(close, pick("open"), pick("high"), pick("low"), pick("volume").fillna(0), sector,
                   _macro(market, idx))
@@ -365,21 +390,31 @@ def build(market: str, tickers=None, start=None, progress=None) -> Panel:
         panel.fund = _fund_panel(univ, close, pick("raw_close"), progress)
     if market == "futures":
         panel = _to_excess(panel, univ)
+    if market == "india-futures":
+        panel = _to_excess(panel, univ, rate=("INDIR3TIB01STM", 45), note=(
+            "- The assets are NSE FUTURES: single-stock futures on every F&O stock, plus NIFTY and BANKNIFTY "
+            "index futures (data.sector == 'Index'). Prices are excess-return indices (the stock's total return "
+            "minus India's 3-month rate, i.e. the cost of carry), so a flat line means earning cash. Shorting a "
+            "future is as easy as buying one, and positions can be levered."))
     return panel
 
 
-def _to_excess(panel: Panel, univ: pd.DataFrame) -> Panel:
-    """Turn fund total returns into futures-style excess returns (minus the 3-month T-bill rate,
-    known the day before), rebased to 100. Open/high/low are scaled by the same factor."""
-    tb = _cache_df("fred_DGS3MO", lambda: _fred("DGS3MO"))
+def _to_excess(panel: Panel, univ: pd.DataFrame, rate=("DGS3MO", 1), note: str | None = None) -> Panel:
+    """Turn total returns into futures-style excess returns (minus a short-term interest rate,
+    as published), rebased to 100. Open/high/low are scaled by the same factor."""
+    sid, lag = rate
+    tb = _cache_df(f"fred_{sid}", lambda: _fred(sid))
     rf = tb.iloc[:, 0] if tb is not None else pd.Series(dtype=float)
-    rf.index = rf.index + pd.Timedelta(days=1)
+    rf.index = rf.index + pd.Timedelta(days=lag)
     rf = rf.groupby(level=0).last().reindex(rf.index.union(panel.index)).ffill().reindex(panel.index).fillna(0.0)
     daily_rf = (rf / 100 / ANN_DAYS).values[:, None]
     r = panel.close.pct_change().fillna(0.0) - daily_rf
     r.iloc[0] = 0.0
     xs = 100 * (1 + r).cumprod()
     k = xs / panel.close
+    if note is not None:
+        return Panel(xs, panel.open * k, panel.high * k, panel.low * k, panel.volume, panel.sector, panel.macro, {},
+                     note)
     names = univ.set_index("symbol")["name"].reindex(panel.columns)
     note = ("- The assets are FUTURES across asset classes (data.sector = equity, rates, fx, energy, metals, "
             "agriculture): " + "; ".join(f"{s} = {n}" for s, n in names.items()) + ". Prices are excess-return "
