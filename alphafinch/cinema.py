@@ -150,7 +150,8 @@ class Cinema:
                 rec.append(c["id"])
         ai_rec = [r for r in rec if self.by_id[r]["op"] in ai_ops]
         self.featured = (ai_rec or rec)[-3:]
-        self.champ = max(ordered, key=lambda p: p["fitness"])
+        by_id = {p["id"]: p for p in ordered}
+        self.champ = by_id.get(self.meta.get("champion_id")) or max(ordered, key=lambda p: p["fitness"])
         self.eq = {}
         for cid in self.featured:
             c = self.by_id[cid]

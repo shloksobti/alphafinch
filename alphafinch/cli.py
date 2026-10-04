@@ -40,6 +40,8 @@ def _load(args) -> data.Panel:
     with console.status(f"[cyan]Loading {MARKET_LABEL.get(args.market, args.market)}…") as st:
         panel = data.load(args.market, tickers, getattr(args, "start", None),
                           progress=lambda i, n, s: st.update(f"[cyan]Downloading {s} ({i + 1}/{n})…"))
+    if getattr(args, "end", None):              # pretend the data stops here (research on past periods)
+        panel = panel.before(pd.Timestamp(args.end) + pd.Timedelta(days=1))
     extras = []
     if panel.volume is not None:
         extras.append("volume")
@@ -81,11 +83,20 @@ def cmd_evolve(args, demo=False):
         console.print("[yellow]No AI provider found. Running offline (parameter tweaks and blends only).\n"
                       "Set ANTHROPIC_API_KEY / OPENAI_API_KEY, install Claude Code, or run Ollama for AI breeding.[/]")
     label = MARKET_LABEL.get(args.market, args.market)
-    with Lab(panel, hold_start, workers=args.lab_workers) as lab:
+    search = getattr(args, "search", "v2")
+    val_years = getattr(args, "validation_years", None)
+    val_years = (0 if search == "v1" else 3.0) if val_years is None else val_years
+    val_start = None
+    if val_years > 0:
+        val_start = panel.index[panel.index.searchsorted(hold_start - pd.DateOffset(years=val_years))]
+        if (panel.index < val_start).sum() < 3 * 252:
+            console.print("[red]Not enough history for a validation window; use --validation-years 0.[/]")
+            return 1
+    with Lab(panel, hold_start, workers=args.lab_workers, validation_start=val_start) as lab:
         exam = fitness.SealedExam(lab, budget=args.exam_budget, alpha=getattr(args, "alpha", 0.05))
         cfg = Config(islands=args.islands, island_size=args.island_size, offspring=args.offspring,
                      generations=args.generations, workers=args.workers, seed=args.seed,
-                     team_size=0 if getattr(args, "no_team", False) else 5)
+                     team_size=0 if getattr(args, "no_team", False) else 5, search=search)
         evo = Evolution(lab, exam, provider, label, cfg, strong=strong)
         view = LiveView(evo, label)
         evo.on_event = view
@@ -106,7 +117,9 @@ def cmd_evolve(args, demo=False):
             path = report.write(evo, out, label, hold_start)
             meta = json.loads((out / "meta.json").read_text())
             meta.update(market=args.market, tickers=getattr(args, "tickers", None), start=getattr(args, "start", None),
-                        alpha=getattr(args, "alpha", 0.05))
+                        end=getattr(args, "end", None), seed=args.seed, alpha=getattr(args, "alpha", 0.05), search=search,
+                        validation_start=None if val_start is None else str(val_start.date()),
+                        champion_id=champ.id if champ else None, team_id=evo.team.id if evo.team else None)
             (out / "meta.json").write_text(json.dumps(meta, indent=1))
     passed = [a for a in exam.attempts if a["verdict"] == "PASS"]
     console.print()
@@ -198,6 +211,7 @@ def main(argv=None):
         sp.add_argument("--holdout-years", type=float, default=None,
                         help="years sealed away for the exam (default 3; 1.5 for crypto)")
         sp.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
+        sp.add_argument("--end", help="ignore all data after this date, e.g. 2023-10-01 (research on past periods)")
 
     ev = sub.add_parser("evolve", help="evolve strategies")
     common(ev)
@@ -219,6 +233,10 @@ def main(argv=None):
     ev.add_argument("--out", default="runs")
     ev.add_argument("--no-team", action="store_true", help="skip building a team of survivors at the end")
     ev.add_argument("--no-reveal", action="store_true", help="skip the animated exam reveal at the end")
+    ev.add_argument("--search", default="v2", choices=["v2", "v1"],
+                    help="v2 (default): alpha fitness, random-halves check, validation, toolkit. v1: the original search")
+    ev.add_argument("--validation-years", type=float, default=None,
+                    help="years before the holdout used to choose the champion, never for breeding (default 3; 0 = off)")
 
     dm = sub.add_parser("demo", help="offline demo on a synthetic market (no AI, no network)")
     dm.add_argument("--generations", type=int, default=12)
@@ -250,7 +268,8 @@ def main(argv=None):
         ns = argparse.Namespace(market="synthetic", tickers=None, start=None, holdout_years=5.0, provider="none",
                                 model=None, strong_model=None, base_url=None, api_key=None,
                                 generations=args.generations, islands=4, island_size=8, offspring=4, exam_budget=10,
-                                workers=6, lab_workers=4, seed=0, out=args.out, sec_contact=None)
+                                workers=6, lab_workers=4, seed=0, out=args.out, sec_contact=None,
+                                validation_years=0)
         return cmd_evolve(ns, demo=True)
     if args.cmd == "backtest":
         return cmd_backtest(args)

@@ -144,3 +144,43 @@ def test_hard_coded_asset_and_sector_names_are_rejected(lab):
                  "def strategy(prices, data):\n    return (data.sector == 'Banks').astype(float) + prices * 0\n"]:
         with pytest.raises(StrategyError, match="hard-coded"):
             lab.run(code)
+
+
+def test_toolkit_strategies_are_causal_and_get_halves(lab):
+    code = ('def strategy(prices, data):\n'
+            '    """Sector Spread: sector-neutral momentum. Hypothesis: slow diffusion."""\n'
+            '    score = tk.neutralize(tk.zscore(prices.pct_change(60)), data.sector)\n'
+            '    return tk.rebalance(tk.vol_target(tk.long_short(score, 0.25), prices), "M")\n')
+    res = lab.run(code)
+    assert res.halves is not None and len(res.halves) == 4
+    s = engine.stats(res.returns, res.turnover, res.gross, lab.mkt["train"], halves=res.halves)
+    assert len(s.halves) == 4 and abs(s.beta) < 0.5
+
+
+def test_v2_fitness_ignores_beta_and_punishes_a_narrow_edge():
+    eras = [{"score": 0.5}] * 4
+    broad = engine.Stats(1, .1, .1, -.1, 2, 1, 1, 0, 0.5, 0, {}, 2000, eras, [0.5, 0.4, 0.6, 0.5])
+    narrow = engine.Stats(1, .1, .1, -.1, 2, 1, 1, 0, 0.5, 0, {}, 2000, eras, [1.0, -0.2, 0.9, 0.1])
+    assert fitness.fitness(broad, "x") > fitness.fitness(narrow, "x")
+    assert fitness.fitness(broad, "x", "v1") == fitness.fitness(narrow, "x", "v1")
+
+
+def test_validation_chooses_the_champion_and_breeding_never_sees_it():
+    val = pd.Timestamp("2004-01-02")
+    with Lab(_panel(), HOLD, workers=2, timeout=20, validation_start=val) as lb:
+        assert lb.train.index.max() < val <= lb.dev.index.max() < HOLD
+        ex = fitness.SealedExam(lb, budget=3)
+        e = evolve.Evolution(lb, ex, None, "synthetic",
+                             evolve.Config(islands=2, island_size=5, offspring=2, generations=2, workers=2))
+        champ = e.run()
+        assert champ is e.final and champ.val is not None
+        assert champ.val == max(p.val for p in e.finalists())
+        assert all(a["id"] in (champ.id, getattr(e.team, "id", None)) for a in ex.attempts)   # no mid-run exams
+
+
+def test_v1_search_still_runs(lab):
+    ex = fitness.SealedExam(lab, budget=3)
+    e = evolve.Evolution(lab, ex, None, "synthetic",
+                         evolve.Config(islands=2, island_size=5, offspring=2, generations=2, workers=2, search="v1"))
+    assert np.isfinite(e.run().fitness)
+    assert "tk." not in prompts.system("x", "v1") and "tk.neutralize" in prompts.system("x")

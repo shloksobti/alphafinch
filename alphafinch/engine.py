@@ -26,6 +26,7 @@ class Stats:
     yearly: dict = field(default_factory=dict)
     n_days: int = 0
     eras: list = field(default_factory=list)   # per-era {start, end, sharpe, appraisal, score}
+    halves: list = field(default_factory=list)  # appraisal ratio on random halves of the universe
 
     @property
     def t(self) -> float:
@@ -52,7 +53,10 @@ def _sharpe(r):
     return float(r.mean() / sd * math.sqrt(ANN)) if sd > 0 else 0.0
 
 
-def stats(r: pd.Series, turnover: pd.Series, gross: pd.Series, mkt: pd.Series, eras: bool = True) -> Stats:
+def stats(r: pd.Series, turnover: pd.Series, gross: pd.Series, mkt: pd.Series, eras: bool = True,
+          halves: list | None = None, search: str = "v2") -> Stats:
+    """search "v2" scores each era on its appraisal ratio (the exam's statistic, per unit of
+    time); "v1" (the original search) used half Sharpe ratio, half appraisal."""
     r, mkt = r.iloc[1:], mkt.reindex(r.index).fillna(0).iloc[1:]
     turnover, gross = turnover.iloc[1:], gross.iloc[1:]
     eq = (1 + r).cumprod()
@@ -68,6 +72,7 @@ def stats(r: pd.Series, turnover: pd.Series, gross: pd.Series, mkt: pd.Series, e
             cr, cm = r.iloc[a_:b_], mkt.iloc[a_:b_]
             sh, ap = _sharpe(cr), alpha_stats(cr, cm)[2]
             era_list.append({"start": str(cr.index[0].date()), "end": str(cr.index[-1].date()),
-                             "sharpe": sh, "appraisal": ap, "score": 0.5 * sh + 0.5 * ap})
+                             "sharpe": sh, "appraisal": ap, "score": ap if search == "v2" else 0.5 * sh + 0.5 * ap})
+    half_ap = [alpha_stats(h.iloc[1:], mkt)[2] for h in halves] if halves else []
     return Stats(_sharpe(r), cagr, float(r.std() * math.sqrt(ANN)), dd, float(turnover.mean() * ANN),
-                 float(gross.mean()), beta, alpha, appraisal, alpha_t, yearly, len(r), era_list)
+                 float(gross.mean()), beta, alpha, appraisal, alpha_t, yearly, len(r), era_list, half_ap)

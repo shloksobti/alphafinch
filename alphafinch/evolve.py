@@ -18,6 +18,10 @@ only exists at one exact setting, its fitness is marked down.
 Lab notebook: every AI-bred idea, its hypothesis and what went wrong is remembered and shown
 to the AI, so it stops re-inventing the same strategy.
 Team: at the end, a diverse team of survivors is chosen on training data and sits the exam.
+Validation (when the Lab has a validation window): breeding never sees the last years of the
+training period. At the end, the top finalists by training fitness (and the team) are scored once
+on that window, and the best of them becomes the champion that sits the exam. Validation scores
+are never shown to the AI, so the window stays out of the search.
 """
 from __future__ import annotations
 
@@ -56,6 +60,7 @@ class Individual:
     raw_fitness: float | None = None     # before the robustness check
     robust: float | None = None          # mean fitness of nearby parameter settings
     returns: object = None               # training daily returns (kept for team building)
+    val: float | None = None             # appraisal ratio on the validation window (finalists only)
 
     @property
     def niche(self) -> tuple:
@@ -161,6 +166,8 @@ class Config:
     robust_check: bool = True
     team_size: int = 5
     seed: int = 0
+    search: str = "v2"               # "v1" = the original search (for comparisons)
+    finalists: int = 10              # candidates scored on the validation window
 
 
 class Evolution:
@@ -179,12 +186,15 @@ class Evolution:
         self.failures = 0
         self.notebook: list[dict] = []
         self.team: Individual | None = None
+        self.final: Individual | None = None
 
     # -- evaluation -------------------------------------------------------------------------
     def _score(self, code: str, bloat: bool = True):
         res = self.lab.run(code, "train")
-        s = engine.stats(res.returns, res.turnover, res.gross, self.lab.mkt["train"])
-        return s, fit.fitness(s, code if bloat else ""), res.returns
+        v2 = self.cfg.search == "v2"
+        s = engine.stats(res.returns, res.turnover, res.gross, self.lab.mkt["train"],
+                         halves=res.halves if v2 else None, search=self.cfg.search)
+        return s, fit.fitness(s, code if bloat else "", self.cfg.search), res.returns
 
     def evaluate(self, ind: Individual) -> Individual:
         try:
@@ -226,7 +236,7 @@ class Evolution:
         self.llm_calls += 1
         llm = self.strong if (strong and self.strong) else self.llm
         try:
-            return prompts.extract_code(llm.complete(prompts.system(self.data_desc), prompt))
+            return prompts.extract_code(llm.complete(prompts.system(self.data_desc, self.cfg.search), prompt))
         except LLMError as e:
             self.on_event("llm_error", error=str(e))
             return None
@@ -311,6 +321,8 @@ class Evolution:
         self.on_event("seeded", best=self.champion())
 
     def champion(self) -> Individual | None:
+        if self.final is not None:
+            return self.final
         alive = [p for isl in self.islands for p in isl]
         return max(alive, key=lambda p: p.fitness) if alive else None
 
@@ -353,7 +365,7 @@ class Evolution:
             self.on_event("migration")
         champ = self.champion()
         reserve = 2 if self.cfg.team_size > 1 else 1        # final champion + team
-        if champ and champ.exam is None and champ.fitness > self.examined_best + self.cfg.exam_margin \
+        if champ and self.lab.val is None and champ.exam is None and champ.fitness > self.examined_best + self.cfg.exam_margin \
                 and self.exam.left > reserve:
             self._sit(champ)
         self.on_event("generation", gen=self.gen, best=champ)
@@ -393,17 +405,47 @@ class Evolution:
         self.all[ind.id] = ind
         return ind
 
+    def validate(self, ind: Individual) -> float:
+        """Appraisal ratio on the validation window (data breeding never saw)."""
+        try:
+            res = self.lab.run(ind.code, "dev", check_leaks=False)
+            mask = res.returns.index >= self.lab.val
+            ind.val = float(engine.alpha_stats(res.returns[mask], self.lab.mkt["dev"][mask])[2])
+        except Exception:
+            ind.val = float("-inf")
+        return ind.val
+
+    def finalists(self) -> list[Individual]:
+        out, seen = [], set()
+        for p in sorted([p for isl in self.islands for p in isl], key=lambda p: -p.fitness):
+            key = " ".join(p.code.split())
+            if key not in seen:
+                seen.add(key)
+                out.append(p)
+            if len(out) == self.cfg.finalists:
+                break
+        return out
+
     def run(self):
         t0 = time.time()
         self.seed_population()
         for _ in range(self.cfg.generations):
             self.step()
+        if self.cfg.team_size > 1:
+            self.team = self.build_team()
+        if self.lab.val is not None:                      # choose the champion on unseen years
+            fins = self.finalists()
+            with ThreadPoolExecutor(self.cfg.workers) as ex:
+                list(ex.map(self.validate, fins + ([self.team] if self.team else [])))
+            self.final = max(fins, key=lambda p: p.val)
+            self.on_event("validated", finalists=fins, champion=self.final)
         champ = self.champion()
         if champ and champ.exam is None and self.exam.left > 0:
             self._sit(champ)
-        if self.cfg.team_size > 1:
-            self.team = self.build_team()
-            if self.team and self.exam.left > 0 and champ and self.team.fitness >= champ.fitness - 0.05:
+        if self.team and self.exam.left > 0 and champ:
+            ok = (self.team.val >= champ.val - 0.1) if self.lab.val is not None \
+                else (self.team.fitness >= champ.fitness - 0.05)
+            if ok:
                 self._sit(self.team)
         self.on_event("done", seconds=time.time() - t0)
         return champ

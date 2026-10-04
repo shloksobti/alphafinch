@@ -3,8 +3,14 @@
 Each worker loads the market panel ONCE (from a pickle written by the main process). A task
 sends only strategy code; the worker executes it with restricted builtins, checks it for
 look-ahead, simulates the portfolio and returns only daily return/turnover/exposure arrays.
-During evolution strategies see the training panel only. The sealed holdout is used solely by
-`exam_returns`, whose results never flow back to the AI.
+
+Splits:  "train"  data used for breeding (before the validation window, if there is one)
+         "dev"    train + validation window (used once, to choose finalists)
+         "full"   everything, including the sealed holdout (used only by the exam)
+
+Random halves: on "train", the portfolio's return is also computed on random halves of the
+asset universe. A real anomaly should work in both halves; an edge that lives in a handful of
+stocks will not.
 
 Strategy contract:
     def strategy(prices):            # prices = data.close
@@ -28,14 +34,16 @@ import numpy as np
 import pandas as pd
 
 from .sandbox import ALLOWED_IMPORTS, SAFE_BUILTINS, StrategyError, check, check_names
+from .toolkit import TK
 
 COST_BPS = 5.0
 LEAK_CUTS = (0.55, 0.85)
+N_SPLITS = 2              # random partitions of the universe -> 2 * N_SPLITS halves
 _W: dict = {}
 
 
 # ------------------------------------------------------------------------------- worker side
-def _init(path: str, hold_start):
+def _init(path: str, hold_start, val_start=None):
     try:
         import resource
         resource.setrlimit(resource.RLIMIT_CPU, (24 * 3600, 24 * 3600))
@@ -44,7 +52,16 @@ def _init(path: str, hold_start):
     with open(path, "rb") as f:
         full = pickle.load(f)
     _W["full"] = full
-    _W["train"] = full.before(pd.Timestamp(hold_start)) if hold_start is not None else full
+    _W["dev"] = full.before(pd.Timestamp(hold_start)) if hold_start is not None else full
+    _W["train"] = full.before(pd.Timestamp(val_start)) if val_start is not None else _W["dev"]
+    rng = np.random.default_rng(12345)
+    n = full.close.shape[1]
+    masks = []
+    for _ in range(N_SPLITS):
+        m = np.zeros(n, bool)
+        m[rng.permutation(n)[: n // 2]] = True
+        masks += [m, ~m]
+    _W["halves"] = masks
 
 
 def _namespace(p) -> SimpleNamespace:
@@ -62,7 +79,7 @@ def _imp(name, *a, **k):
 
 def _weights(code: str, p) -> pd.DataFrame:
     import math as _m
-    g = {"__builtins__": dict(SAFE_BUILTINS, __import__=_imp), "np": np, "pd": pd, "math": _m}
+    g = {"__builtins__": dict(SAFE_BUILTINS, __import__=_imp), "np": np, "pd": pd, "math": _m, "tk": TK}
     exec(compile(code, "<strategy>", "exec"), g)
     f = g["strategy"]
     nargs = f.__code__.co_argcount
@@ -79,12 +96,17 @@ def _normalise(w: pd.DataFrame) -> pd.DataFrame:
     return w.mul(np.where(gross > 1, 1 / gross.replace(0, 1), 1.0), axis=0)
 
 
-def _simulate(w: pd.DataFrame, close: pd.DataFrame, cost_bps: float):
+def _simulate(w: pd.DataFrame, close: pd.DataFrame, cost_bps: float, halves=None):
     rets = close.astype("float64").pct_change().fillna(0.0)
     held = _normalise(w).shift(1).fillna(0.0)
-    turnover = held.diff().abs().sum(axis=1).fillna(held.abs().sum(axis=1))
-    r = (held * rets).sum(axis=1) - turnover * cost_bps / 1e4
-    return r.values, turnover.values, held.abs().sum(axis=1).values
+    trades = held.diff().abs()
+    trades.iloc[0] = held.iloc[0].abs()
+    contrib = (held * rets).values - trades.values * cost_bps / 1e4
+    r, turnover = contrib.sum(axis=1), trades.values.sum(axis=1)
+    half_r = None
+    if halves is not None:          # each half's sub-portfolio, scaled up to the full book's size
+        half_r = np.stack([2.0 * contrib[:, m].sum(axis=1) for m in halves])
+    return r, turnover, held.abs().sum(axis=1).values, half_r
 
 
 def _task(code: str, split: str, check_leaks: bool, cost_bps: float):
@@ -101,8 +123,11 @@ def _task(code: str, split: str, check_leaks: bool, cost_bps: float):
                     bad = np.argwhere(~np.isclose(a, b, atol=1e-6))[0][0]
                     return {"error": f"look-ahead detected: weights on {p.close.index[bad].date()} "
                                      "change when later data is removed"}
-        r, to, gross = _simulate(w, p.close, cost_bps)
-        return {"r": r.astype("float32"), "to": to.astype("float32"), "gross": gross.astype("float32")}
+        r, to, gross, half_r = _simulate(w, p.close, cost_bps, _W["halves"] if split == "train" else None)
+        out = {"r": r.astype("float32"), "to": to.astype("float32"), "gross": gross.astype("float32")}
+        if half_r is not None:
+            out["halves"] = half_r.astype("float32")
+        return out
     except StrategyError as e:
         return {"error": str(e)}
     except Exception as e:
@@ -115,15 +140,18 @@ class Result:
     returns: pd.Series
     turnover: pd.Series
     gross: pd.Series
+    halves: list | None = None      # returns on random halves of the universe ("train" only)
 
 
 class Lab:
     def __init__(self, panel, holdout_start=None, workers: int = 4, timeout: float = 180.0, cost_bps=COST_BPS,
-                 ban_names: bool = True):
+                 ban_names: bool = True, validation_start=None):
         self.ban_names = ban_names
         self.full = panel
         self.hold = pd.Timestamp(holdout_start) if holdout_start is not None else None
-        self.train = panel.before(self.hold) if self.hold is not None else panel
+        self.dev = panel.before(self.hold) if self.hold is not None else panel
+        self.val = pd.Timestamp(validation_start) if validation_start is not None else None
+        self.train = panel.before(self.val) if self.val is not None else self.dev
         self.workers, self.timeout, self.cost_bps = workers, timeout, cost_bps
         fd, self._path = tempfile.mkstemp(prefix="alphafinch_", suffix=".pkl")
         with os.fdopen(fd, "wb") as f:
@@ -136,11 +164,11 @@ class Lab:
         names |= {n.split(".")[0] for n in names if n.endswith(".NS")}       # RELIANCE as well as RELIANCE.NS
         self.banned_names = {n for n in names if len(n) >= 2}
         mk = lambda p: p.close.astype("float64").pct_change().fillna(0.0).mean(axis=1)
-        self.mkt = {"train": mk(self.train), "full": mk(self.full)}
+        self.mkt = {"train": mk(self.train), "dev": mk(self.dev), "full": mk(self.full)}
 
     def _start(self):
         self._pool = ProcessPoolExecutor(self.workers, mp_context=mp.get_context("spawn"), initializer=_init,
-                                         initargs=(self._path, self.hold), max_tasks_per_child=60)
+                                         initargs=(self._path, self.hold, self.val), max_tasks_per_child=60)
 
     def _restart(self):
         pool, self._pool = self._pool, None
@@ -167,9 +195,10 @@ class Lab:
             raise StrategyError(f"worker crashed: {type(e).__name__}") from None
         if "error" in out:
             raise StrategyError(out["error"])
-        idx = (self.train if split == "train" else self.full).close.index
+        idx = {"train": self.train, "dev": self.dev, "full": self.full}[split].close.index
+        halves = [pd.Series(h, idx, dtype="float64") for h in out["halves"]] if "halves" in out else None
         return Result(pd.Series(out["r"], idx, dtype="float64"), pd.Series(out["to"], idx, dtype="float64"),
-                      pd.Series(out["gross"], idx, dtype="float64"))
+                      pd.Series(out["gross"], idx, dtype="float64"), halves)
 
     def close(self):
         if self._pool:

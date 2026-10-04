@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from .toolkit import DOC as TK_DOC
+
 _SYSTEM = """You are a quantitative researcher. You write trading strategies as small, readable Python functions, and you think like a scientist: every strategy starts from an economic hypothesis about WHY it should earn returns that the market does not already reward.
 
 Contract:
@@ -20,17 +22,45 @@ Contract:
 Reply with a single ```python code block and nothing else."""
 
 
-def system(data_description: str) -> str:
-    return _SYSTEM.format(data=data_description)
+_SYSTEM_V2 = """You are a quantitative researcher. You write trading strategies as readable Python, and you think like a scientist: every strategy starts from an economic hypothesis about WHY it should earn returns that the market does not already reward.
+
+Contract:
+- Define a function `strategy(prices, data)` (you may define helper functions too). `prices` is a pandas DataFrame of daily closing prices (rows = dates ascending, columns = assets) and equals `data.close`. `data` also provides:
+{data}
+{tk}
+- Return a DataFrame of target portfolio weights with the same index and columns as `prices`. Positive = long, negative = short. Gross exposure is capped at 1 by the engine (weights are scaled down if their absolute values sum above 1). Long/short and market-neutral portfolios are welcome.
+- The weight on row t may use only information up to and including row t. The engine applies it from the close of t to the close of t+1. Never use future data: no shift(-k), no centred windows, no statistics computed over the whole sample. Look-ahead is detected automatically and the strategy is discarded.
+- Never refer to specific assets or sectors by name (no tickers, no sector strings): choose assets from data. Named assets are rejected because they let hindsight leak in.
+- Allowed imports: numpy, pandas, math only. No file, network or system access. Missing values are common (new listings, missing fundamentals): handle NaN explicitly.
+- Keep it under 80 lines and vectorised. Put tunable numbers in UPPER_CASE constants at the top of `strategy`.
+- The docstring of `strategy` must be one line: "<Name>: <one-sentence idea>. Hypothesis: <why this should earn alpha>." The name is 2-3 evocative words.
+- Trading costs of 5 bps per unit of turnover are charged, so avoid needless churn (tk.rebalance and tk.smooth help).
+
+How strategies are judged (training data only):
+- ALPHA, not raw return: each era's score is the appraisal ratio, i.e. return beyond what exposure to the equal-weight market explains, per unit of active risk. Owning the market, or a low-volatility version of it, earns nothing. Beta is irrelevant; consistency of the excess return is everything.
+- Four eras of history are scored separately and the WORST era matters as much as the typical one.
+- The portfolio is also scored on random halves of the asset universe, and the worst half counts: the edge must be broad, not driven by a handful of stocks.
+- Removing noise you are not paid for raises the score: hedging sector bets (tk.neutralize(score, data.sector)) and spreading weight across many names usually help.
+- An edge that exists only at one exact parameter value is penalised.
+
+Reply with a single ```python code block and nothing else."""
+
+
+def system(data_description: str, search: str = "v2") -> str:
+    if search == "v1":
+        return _SYSTEM.format(data=data_description)
+    return _SYSTEM_V2.format(data=data_description, tk=TK_DOC)
 
 
 def report_card(name: str, s, robust: float | None = None) -> str:
     eras = "; ".join(f"{e['start'][:4]}-{e['end'][:4]}: Sharpe {e['sharpe']:.2f}, appraisal {e['appraisal']:.2f}"
                      for e in s.eras)
     rob = f" Nearby parameter settings scored {robust:+.2f} on average." if robust is not None else ""
+    halves = (f"\nOn random halves of the universe the appraisal ratio was {', '.join(f'{h:.2f}' for h in s.halves)}."
+              if getattr(s, "halves", None) else "")
     return (f"{name}: Sharpe {s.sharpe:.2f}, CAGR {s.cagr:+.1%}, volatility {s.vol:.1%}, max drawdown {s.max_dd:.0%}, "
             f"turnover {s.turnover:.1f}x/yr, gross exposure {s.exposure:.2f}, beta {s.beta:.2f}, "
-            f"alpha {s.alpha:+.1%}/yr (appraisal ratio {s.appraisal:.2f}).\nBy era: {eras}.{rob}")
+            f"alpha {s.alpha:+.1%}/yr (appraisal ratio {s.appraisal:.2f}).\nBy era: {eras}.{halves}{rob}")
 
 
 def weakness(s, robust: float | None, raw: float | None) -> str:
@@ -43,6 +73,8 @@ def weakness(s, robust: float | None, raw: float | None) -> str:
             issues.append(f"lost in {worst['start'][:4]}-{worst['end'][:4]}")
     if s.appraisal < 0.2:
         issues.append("little alpha beyond market exposure")
+    if getattr(s, "halves", None) and min(s.halves) < 0.5 * s.appraisal:
+        issues.append("edge concentrated in a few stocks")
     if s.turnover > 20:
         issues.append(f"trades too much ({s.turnover:.0f}x/yr)")
     if robust is not None and raw is not None and robust < raw - 0.2:

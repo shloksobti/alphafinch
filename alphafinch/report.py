@@ -180,7 +180,7 @@ def write(evo, out_dir: Path, market_label: str, holdout_start) -> Path:
     (out_dir / "population.json").write_text(json.dumps([
         {"id": p.id, "name": p.name, "op": p.op, "parents": list(p.parents), "gen": p.gen, "island": p.island,
          "fitness": None if p.stats is None else p.fitness, "raw_fitness": p.raw_fitness, "robust": p.robust,
-         "error": p.error, "exam": p.exam, "code": p.code,
+         "error": p.error, "exam": p.exam, "val": p.val, "code": p.code,
          "train": None if p.stats is None else {"sharpe": p.stats.sharpe, "cagr": p.stats.cagr, "max_dd": p.stats.max_dd,
                                                 "turnover": p.stats.turnover, "beta": p.stats.beta,
                                                 "alpha": p.stats.alpha, "eras": p.stats.eras}}

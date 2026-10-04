@@ -1,9 +1,13 @@
 """Fitness (training period only), the sealed exam, and the graded verdict.
 
-Fitness rewards an edge that holds up in EVERY era of the training period, not one lucky stretch:
-each of four eras is scored (half Sharpe, half appraisal ratio = alpha per unit of active risk),
-and fitness blends the median era with the worst era. Penalties for heavy trading, bloated code
-and mostly-cash portfolios. The holdout is never used for fitness or shown to the AI.
+Fitness rewards an edge that holds up in EVERY era of the training period and across the whole
+universe, not one lucky stretch or a handful of stocks:
+  * each of four eras is scored on its appraisal ratio (alpha per unit of active risk, the same
+    quantity the exam tests), and the median era is blended with the worst era;
+  * the portfolio is also scored on random halves of the asset universe, and the worst half counts.
+Penalties for heavy trading, bloated code and mostly-cash portfolios. The holdout is never used
+for fitness or shown to the AI. search="v1" reproduces the original fitness (half Sharpe ratio,
+eras only) for comparisons.
 
 The sealed exam answers PASS/FAIL only, at most `budget` times. To pass, a strategy's holdout
 alpha t-statistic must exceed t^{-1}(alpha / budget). Because each attempt reveals one bit, this
@@ -20,16 +24,19 @@ from scipy import stats as sstats
 from .engine import Stats, alpha_stats, stats as compute_stats
 
 
-def fitness(s: Stats, code: str) -> float:
+def fitness(s: Stats, code: str, search: str = "v2") -> float:
     if s.n_days < 252:
         return -9.0
     if s.eras:
         scores = np.array([e["score"] for e in s.eras])
         core = 0.5 * float(np.median(scores)) + 0.5 * float(scores.min())
     else:
-        core = 0.5 * s.sharpe + 0.5 * s.appraisal
+        core = s.appraisal if search == "v2" else 0.5 * s.sharpe + 0.5 * s.appraisal
+    if search == "v2" and s.halves:
+        core = 0.5 * core + 0.5 * min(core, float(min(s.halves)))   # only ever lowers the score
     trading = 0.02 * max(0.0, s.turnover - 12.0)            # > ~monthly full rebalancing costs extra
-    bloat = 0.0006 * max(0, len(code) - 1500)               # Occam: long code must earn its keep
+    limit = 3000 if search == "v2" else 1500                # v2 allows richer strategies
+    bloat = 0.0006 * max(0, len(code) - limit)              # Occam: long code must earn its keep
     lev = 0.5 * max(0.0, 0.2 - s.exposure)                  # mostly-cash strategies are not alpha
     return float(core - trading - bloat - lev)
 
