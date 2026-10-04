@@ -30,3 +30,8 @@ alphafinch = "alphafinch.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/shloksobti/alphafinch"
+Documentation = "https://github.com/shloksobti/alphafinch/blob/main/docs/guide.md"
+Issues = "https://github.com/shloksobti/alphafinch/issues"
+
+[tool.hatch.build.targets.sdist]
+include = ["alphafinch", "tests", "README.md", "LICENSE", "pyproject.toml"]

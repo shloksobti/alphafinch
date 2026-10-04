@@ -4,7 +4,7 @@
 
 ### AI evolves trading strategies while you sleep.<br>Then they sit an exam they can't cheat.
 
-<img src="docs/demo.gif" alt="AlphaFinch: install, evolve strategies, and the sealed exam" width="900">
+<img src="https://raw.githubusercontent.com/shloksobti/alphafinch/main/docs/demo.gif" alt="AlphaFinch: install, evolve strategies, and the sealed exam" width="900">
 
 Works with **Claude Code**, **Anthropic**, **OpenAI**, **Ollama**, any OpenAI-compatible server, or **no AI at all**.
 
@@ -69,7 +69,7 @@ Two choices shape every run: the **market** (a plain word, e.g. `india`) and the
 
 `alphafinch replay runs/<timestamp>` re-tells any finished run as a short story:
 
-<img src="docs/replay.gif" alt="alphafinch replay: the AI writing a strategy, a new champion, and the sealed exam" width="820">
+<img src="https://raw.githubusercontent.com/shloksobti/alphafinch/main/docs/replay.gif" alt="alphafinch replay: the AI writing a strategy, a new champion, and the sealed exam" width="820">
 
 ## How it works
 
