@@ -93,6 +93,20 @@ Each generation, on every island:
 
 Most runs end with **no strategy passing**. That's the honest answer when nothing in the data survives out of sample, and it's exactly what other tools hide.
 
+### 🌍 The world exam: does it work on markets it has never seen?
+
+Three sealed years of one market rarely contain enough evidence to prove a realistic edge. So freeze
+a strategy and test it, unchanged, on **seven other stock markets**: the UK, the Eurozone, Japan, Hong
+Kong, Australia, Canada and Korea.
+
+```bash
+alphafinch world-exam runs/<timestamp>/champion.py --start 2017-10-02
+```
+
+Each market's alpha is measured against its own benchmark. The evidence is pooled across markets
+and judged at the same kind of bar. The pooled statistic is the *lower* of two methods, so a
+strategy has to convince both. It's calibrated with placebos: of 200 random strategies, none passed.
+
 ### Hindsight: why the AI may "know" the answers, and the forward test
 
 Language models have read about recent years, so an AI could favour stocks or styles it knows did well in the sealed period. AlphaFinch rejects any strategy that names a specific ticker or sector, and the AI only ever sees training results. A style-level leak is still possible, so the strongest test is the future:
@@ -122,6 +136,7 @@ alphafinch forward score                     # months later: judge them on data 
 | `us` | S&P 500 (~430 with full history), since 2010, with sectors, macro data and SEC fundamentals | Yahoo Finance, FRED, SEC EDGAR |
 | `india` | NIFTY 200 (~140 with full history), since 2010, with sectors and macro data | Yahoo Finance (`.NS`), NSE, FRED |
 | `us30` | 30 US mega-caps, since 2008 | Yahoo Finance |
+| `uk` `europe` `japan` `hongkong` `australia` `canada` `korea` | FTSE 100, Eurozone large caps, Nikkei 225, Hang Seng, ASX 200, TSX 60, KOSPI 200 | Yahoo Finance |
 | `crypto` | 15 top coins vs USDT, since late 2020 | Binance public API |
 | `industries` | 49 US industry portfolios, since 1970 | Ken French Data Library |
 | `synthetic` | regime-switching simulated market | offline |
@@ -165,29 +180,38 @@ alphafinch backtest my_strategy.py --market us
 
 ## Real runs, pre-registered
 
-Before running, we committed the exact commands, the pass bars and what would count as success in
-[`docs/preregistration-v2.md`](docs/preregistration-v2.md). Earlier looks at the same sealed years
-during development were counted too, which raises the bar. Then we ran 25 generations × 4 islands
-on each market, bred by Claude through Claude Code with Opus for the big ideas.
+Every test below was committed to [`docs/`](docs) **before** it ran, with its bar and its success
+criterion, and every result is reported.
 
-| | 🇺🇸 S&P 500 (426 stocks) | 🇮🇳 NIFTY 200 (139 stocks) |
-|---|---|---|
-| Sealed years | Oct 2023 – Oct 2026 | Oct 2023 – Oct 2026 |
-| Exam attempts passed | **0 of 5** (bar t = 3.03) | **0 of 5** (bar t = 2.82) |
-| Best result | 🟡 The Team: alpha +3.2%/yr, t = 1.65 | 🟡 Hedged Calm Residual: alpha +3.1%/yr, t = 1.28 |
-| Champion's return vs buying everything | +11.8% vs +18.9% a year | +7.9% vs +19.3% a year |
+**1. One market, three sealed years: nothing passed.** On the S&P 500 and the NIFTY 200, 0 of 10
+exam attempts passed ([details](docs/preregistration-v2.md)). The original search overfit: training
+scores rose while sealed-years alpha fell.
 
-**Nothing passed.** Every strategy that sat the exam had positive alpha in the sealed years, and
-three were PROMISING, but none came close to proof. In the US, evolution pushed the training score
-from 0.43 to 0.73 while out-of-sample alpha *fell*: the hand-written momentum seed did better in the
-sealed years than anything the AI evolved. That's adaptive overfitting, caught in the act, and the
-reason the exam exists.
+**2. A better search.** Search v2 scores alpha instead of Sharpe ratio, chooses champions on years
+breeding never saw, demands the edge hold on random halves of the stocks, and gives the AI a
+quant toolkit. On a stand-in exam, v2 beat v1 in all 4 matched runs
+(mean alpha t +0.66 vs −0.41; [details](docs/search-ablation.md)).
 
-A normal backtesting tool would have shown you the training curve and called it a win.
+**3. The world exam: one strategy passed.** Five v2 strategies, bred only on data before 2017, were
+frozen and tested on seven markets they had never seen, from October 2017 to October 2026
+([details](docs/preregistration-world.md)).
 
-The champions and teams are now frozen in [`forward/`](forward). We'll score them on data that didn't
-exist when they were made (from October 2026), at 6 and 12 months, and publish the result
-either way.
+| | Alpha per year | t (bar 2.33) | Markets positive |
+|---|---|---|---|
+| ✅ **Quiet Sector Tether v2** | **+2.9%** | **3.40** | **7 of 7** |
+| 🟡 The Team (India) | +2.3% | 2.14 | 6 of 7 |
+| 🟡 Quiet Intraday Relay v2 | +0.9% | 1.03 | 5 of 7 |
+| ❌ two others | negative | | |
+
+*Quiet Sector Tether* buys, within each sector, the stocks that move least with the market and
+shorts those that move most. It's essentially **"betting against correlation"**, an anomaly AQR
+researchers published in 2020: the AI rediscovered it from pre-2017 US data, and it held up out of
+sample in seven other countries. It survives realistic trading costs (t 2.94 at 15 bps) and a
+causal beta hedge (t 3.22). After the six standard Fama–French factors its alpha is still +2.5% a
+year (t 2.64). It is weaker in the later years alone (2020–26: t 2.17, still 7 of 7 markets) and
+ignores short-borrowing fees.
+
+It's frozen in [`forward/`](forward) and will be judged again on data that doesn't exist yet.
 
 ## FAQ
 
