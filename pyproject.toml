@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "alphafinch"
-version = "0.1.0"
-description = "Evolve trading strategies with AI while you sleep, then make them pass an exam they cannot cheat."
+version = "0.1.1"
+description = "AI evolves trading strategies while you sleep. Then they sit an exam they can't cheat."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
