@@ -4,22 +4,19 @@
 
 ### AI evolves trading strategies while you sleep.<br>Then they sit an exam they can't cheat.
 
-<img src="https://raw.githubusercontent.com/shloksobti/alphafinch/main/docs/demo.gif" alt="AlphaFinch: install, evolve strategies, and the sealed exam" width="900">
-
 <p>
 <a href="https://github.com/shloksobti/alphafinch/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/shloksobti/alphafinch/tests.yml?branch=main&label=tests&logo=github" alt="tests"></a>
 <a href="https://github.com/shloksobti/alphafinch"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white" alt="Python 3.10+"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
-<a href="https://github.com/shloksobti/alphafinch/stargazers"><img src="https://img.shields.io/github/stars/shloksobti/alphafinch?style=flat&logo=github" alt="GitHub stars"></a>
+<a href="https://github.com/shloksobti/alphafinch/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
 <br>
-<a href="docs/preregistration-world.md"><img src="https://img.shields.io/badge/world%20exam-PASS%207%2F7%20markets-brightgreen" alt="World exam: PASS in 7 of 7 markets"></a>
-<a href="docs/"><img src="https://img.shields.io/badge/results-pre--registered-blueviolet" alt="Pre-registered results"></a>
-<a href="docs/guide.md#markets"><img src="https://img.shields.io/badge/markets-15%20(stocks%20%C2%B7%20futures%20%C2%B7%20crypto)-orange" alt="15 markets"></a>
+<a href="https://github.com/shloksobti/alphafinch/blob/main/docs/preregistration-world.md"><img src="https://img.shields.io/badge/world%20exam-PASS%207%2F7%20markets-brightgreen" alt="World exam: PASS in 7 of 7 markets"></a>
+<a href="https://github.com/shloksobti/alphafinch/tree/main/docs"><img src="https://img.shields.io/badge/results-pre--registered-blueviolet" alt="Pre-registered results"></a>
+<a href="https://github.com/shloksobti/alphafinch/blob/main/docs/guide.md#markets"><img src="https://img.shields.io/badge/markets-15%20(stocks%20%C2%B7%20futures%20%C2%B7%20crypto)-orange" alt="15 markets"></a>
 <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7557458"><img src="https://img.shields.io/badge/paper-SSRN%207557458-b31b1b" alt="Paper on SSRN"></a>
-<br>
-<img src="https://img.shields.io/badge/AI-Claude%20Code%20%C2%B7%20Anthropic%20%C2%B7%20OpenAI%20%C2%B7%20Ollama-black" alt="AI providers">
 <img src="https://img.shields.io/badge/data-free%2C%20no%20API%20keys-informational" alt="Free data">
 </p>
+
+<img src="https://raw.githubusercontent.com/shloksobti/alphafinch/main/docs/demo.gif" alt="AlphaFinch: install, evolve strategies, and the sealed exam" width="900">
 
 Works with **Claude Code**, **Anthropic**, **OpenAI**, **Ollama**, any OpenAI-compatible server, or **no AI at all**.
 
@@ -89,7 +86,7 @@ Two choices shape every run: the **market** (a plain word, e.g. `india`) and the
 ## How it works
 
 ```
- breed (training years) ─▶ choose (validation years) ─▶ 🔒 sealed exam ─▶ 🌍 world exam ─▶ ⏳ forward test
+ breed ─▶ choose ─▶ 🔒 sealed exam ─▶ 🌍 world exam ─▶ ⏳ forward test
 ```
 
 **Breeding.** Four islands, each with a population of strategies. Every generation the AI **mutates** a parent using its report card, **crosses** two parents into one idea, or invents an **immigrant** from a fresh hypothesis. No-AI operators **tweak** a constant or **blend** two portfolios. Champions migrate between islands, and each island keeps the best strategy in every niche (fast or slow, market-neutral or market-hugging), so the population can't collapse onto one idea.
