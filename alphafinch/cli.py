@@ -2,12 +2,16 @@
 
   alphafinch demo                       offline demo, no AI and no network (about 1 minute)
   alphafinch evolve --market us         evolve strategies (provider auto-detected)
+  alphafinch evolve --market india      Indian stocks (NIFTY 200)
   alphafinch backtest my_strategy.py    backtest one strategy file on the training period
+  alphafinch replay runs/<timestamp>    re-animate a finished run as a short story
   alphafinch markets                    list built-in markets
 """
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,76 +19,99 @@ from pathlib import Path
 import pandas as pd
 from rich.console import Console
 
-from . import data, engine, fitness, llm, report, sandbox
+from . import data, engine, fitness, llm, report
 from .evolve import Config, Evolution
+from .lab import Lab
+from .sandbox import StrategyError
 from .ui import LiveView
 
 console = Console()
-MARKET_LABEL = {"us": "US large-cap stocks", "india": "Indian large-cap stocks (NSE)", "crypto": "Crypto vs USDT",
-                "industries": "49 US industry portfolios (Ken French)", "synthetic": "Synthetic market (offline)"}
+MARKET_LABEL = {"us": "US stocks (S&P 500)", "india": "Indian stocks (NIFTY 200)", "us30": "30 US mega-caps",
+                "crypto": "Crypto vs USDT", "industries": "49 US industry portfolios (Ken French)",
+                "synthetic": "Synthetic market (offline)"}
 
 
-def _load(args) -> pd.DataFrame:
+def _load(args) -> data.Panel:
+    if getattr(args, "sec_contact", None):
+        os.environ["ALPHAFINCH_SEC_CONTACT"] = args.sec_contact
     tickers = [t.strip() for t in args.tickers.split(",")] if getattr(args, "tickers", None) else None
     with console.status(f"[cyan]Loading {MARKET_LABEL.get(args.market, args.market)}…") as st:
-        px = data.load(args.market, tickers, getattr(args, "start", None),
-                       progress=lambda i, n, s: st.update(f"[cyan]Downloading {s} ({i + 1}/{n})…"))
-    console.print(f"[green]✓[/] {px.shape[1]} assets, {px.index[0].date()} → {px.index[-1].date()}")
-    return px
+        panel = data.load(args.market, tickers, getattr(args, "start", None),
+                          progress=lambda i, n, s: st.update(f"[cyan]Downloading {s} ({i + 1}/{n})…"))
+    extras = []
+    if panel.volume is not None:
+        extras.append("volume")
+    if panel.sector is not None and panel.sector.nunique() > 1:
+        extras.append(f"{panel.sector.nunique()} sectors")
+    if panel.macro is not None and len(panel.macro.columns):
+        extras.append(f"{len(panel.macro.columns)} macro series")
+    if panel.fund:
+        extras.append("SEC fundamentals")
+    console.print(f"[green]✓[/] {panel.shape[1]} assets, {panel.index[0].date()} → {panel.index[-1].date()}"
+                  + (f" · {', '.join(extras)}" if extras else ""))
+    if args.market == "us" and not panel.fund and not tickers:
+        console.print("[dim]  Tip: set ALPHAFINCH_SEC_CONTACT=\"Your Name you@email.com\" to add SEC fundamentals "
+                      "(the SEC requires a contact email).[/]")
+    return panel
 
 
-def _split(px: pd.DataFrame, holdout_years: float | None, market: str = "us"):
+def _holdout_start(panel: data.Panel, holdout_years: float | None, market: str = "us"):
     holdout_years = holdout_years or (1.5 if market == "crypto" else 3.0)
-    start = px.index[-1] - pd.DateOffset(years=holdout_years)
-    start = px.index[px.index.searchsorted(start)]
-    return px[px.index < start], start
+    start = panel.index[-1] - pd.DateOffset(years=holdout_years)
+    return panel.index[panel.index.searchsorted(start)]
 
 
 def cmd_evolve(args, demo=False):
-    px = _load(args)
-    train, hold_start = _split(px, args.holdout_years, args.market)
-    if len(train) < 3 * 252:
+    panel = _load(args)
+    hold_start = _holdout_start(panel, args.holdout_years, args.market)
+    if (panel.index < hold_start).sum() < 3 * 252:
         console.print("[red]Not enough training history (need 3+ years before the holdout).[/]")
         return 1
     provider_name = "none" if demo else (llm.auto() if args.provider == "auto" else args.provider)
     try:
         provider = llm.get(provider_name, args.model, args.base_url, args.api_key)
+        strong = llm.get(provider_name, args.strong_model, args.base_url, args.api_key) \
+            if (provider and getattr(args, "strong_model", None)) else None
     except (llm.LLMError, ImportError) as e:
         console.print(f"[red]Could not start provider '{provider_name}': {e}[/]")
         return 1
     if provider is None and not demo:
         console.print("[yellow]No AI provider found. Running offline (parameter tweaks and blends only).\n"
                       "Set ANTHROPIC_API_KEY / OPENAI_API_KEY, install Claude Code, or run Ollama for AI breeding.[/]")
-    exam = fitness.SealedExam(px, hold_start, budget=args.exam_budget, alpha=getattr(args, "alpha", 0.05))
-    cfg = Config(islands=args.islands, island_size=args.island_size, offspring=args.offspring,
-                 generations=args.generations, workers=args.workers, seed=args.seed)
     label = MARKET_LABEL.get(args.market, args.market)
-    evo = Evolution(train, exam, provider, label, cfg)
-    view = LiveView(evo, label)
-    evo.on_event = view
-    with view:
-        champ = evo.run()
-    if champ is not None and champ.exam in ("PASS", "FAIL") and not getattr(args, "no_reveal", False):
-        from rich.live import Live
-        from .cinema import exam_reveal
-        rev = exam.reveal(champ.id, champ.code)
-        hold_px = px[px.index >= hold_start]
-        mkt_hold = (1 + hold_px.pct_change().fillna(0).mean(axis=1)).cumprod().values
-        span = f"{hold_start.strftime('%b %Y')} – {px.index[-1].strftime('%b %Y')}"
-        console.print()
-        with Live(console=console, auto_refresh=False) as live:
-            exam_reveal(live, champ.name, span, mkt_hold, rev, champ.exam, exam.bar,
-                        min(console.width, 118), time.sleep)
-    out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
-    with console.status("[cyan]Writing the morning report…"):
-        path = report.write(evo, out, label, train, hold_start)
-        import json
-        meta = json.loads((out / "meta.json").read_text())
-        meta.update(market=args.market, tickers=getattr(args, "tickers", None), start=getattr(args, "start", None))
-        (out / "meta.json").write_text(json.dumps(meta, indent=1))
+    with Lab(panel, hold_start, workers=args.lab_workers) as lab:
+        exam = fitness.SealedExam(lab, budget=args.exam_budget, alpha=getattr(args, "alpha", 0.05))
+        cfg = Config(islands=args.islands, island_size=args.island_size, offspring=args.offspring,
+                     generations=args.generations, workers=args.workers, seed=args.seed,
+                     team_size=0 if getattr(args, "no_team", False) else 5)
+        evo = Evolution(lab, exam, provider, label, cfg, strong=strong)
+        view = LiveView(evo, label)
+        evo.on_event = view
+        with view:
+            champ = evo.run()
+        if champ is not None and champ.exam in ("PASS", "FAIL") and not getattr(args, "no_reveal", False):
+            from rich.live import Live
+            from .cinema import exam_reveal
+            star = evo.team if (evo.team is not None and evo.team.exam == "PASS") else champ
+            rev = exam.reveal(star.id, star.code)
+            span = f"{hold_start.strftime('%b %Y')} – {panel.index[-1].strftime('%b %Y')}"
+            console.print()
+            with Live(console=console, auto_refresh=False) as live:
+                exam_reveal(live, star.name, span, rev["market_equity"].values, rev, star.exam, exam.bar,
+                            min(console.width, 118), time.sleep)
+        out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
+        with console.status("[cyan]Writing the morning report…"):
+            path = report.write(evo, out, label, hold_start)
+            meta = json.loads((out / "meta.json").read_text())
+            meta.update(market=args.market, tickers=getattr(args, "tickers", None), start=getattr(args, "start", None),
+                        alpha=getattr(args, "alpha", 0.05))
+            (out / "meta.json").write_text(json.dumps(meta, indent=1))
     passed = [a for a in exam.attempts if a["verdict"] == "PASS"]
     console.print()
     console.print(f"[bold]Champion:[/] {champ.name}  (training fitness {champ.fitness:+.2f})")
+    if evo.team is not None:
+        console.print(f"[bold]Team:[/] {len(evo.team.parents)} strategies  (training fitness {evo.team.fitness:+.2f}, "
+                      f"exam {evo.team.exam or 'not taken'})")
     console.print(("[bold green]" if passed else "[bold yellow]") +
                   f"{len(passed)} of {len(exam.attempts)} exam attempts passed the sealed holdout.[/]")
     console.print(f"[bold]Report:[/] {path}")
@@ -93,23 +120,27 @@ def cmd_evolve(args, demo=False):
 
 
 def cmd_backtest(args):
-    px = _load(args)
-    train, _ = _split(px, args.holdout_years, args.market)
+    panel = _load(args)
+    hold = _holdout_start(panel, args.holdout_years, args.market)
     code = Path(args.file).read_text()
-    try:
-        _, s = engine.backtest(code, train)
-    except sandbox.StrategyError as e:
-        console.print(f"[red]Rejected:[/] {e}")
-        return 1
-    console.print(f"Training period {train.index[0].date()} → {train.index[-1].date()}")
-    console.print(f"Sharpe {s.sharpe:.2f} · CAGR {s.cagr:+.1%} · vol {s.vol:.1%} · max drawdown {s.max_dd:.0%} · "
-                  f"turnover {s.turnover:.1f}x/yr · beta {s.beta:.2f} · fitness {fitness.fitness(s, code):+.2f}")
+    with Lab(panel, hold, workers=1) as lab:
+        try:
+            res = lab.run(code, "train")
+        except StrategyError as e:
+            console.print(f"[red]Rejected:[/] {e}")
+            return 1
+        s = engine.stats(res.returns, res.turnover, res.gross, lab.mkt["train"])
+    console.print(f"Training period {lab.train.index[0].date()} → {lab.train.index[-1].date()}")
+    console.print(f"Sharpe {s.sharpe:.2f} · alpha {s.alpha:+.1%}/yr · CAGR {s.cagr:+.1%} · vol {s.vol:.1%} · "
+                  f"max drawdown {s.max_dd:.0%} · turnover {s.turnover:.1f}x/yr · beta {s.beta:.2f} · "
+                  f"fitness {fitness.fitness(s, code):+.2f}")
+    for e in s.eras:
+        console.print(f"  {e['start'][:4]}–{e['end'][:4]}: Sharpe {e['sharpe']:+.2f}, appraisal {e['appraisal']:+.2f}")
     console.print("[dim]The holdout is not touched by `backtest`. Use `evolve` to sit the sealed exam.[/]")
     return 0
 
 
 def cmd_replay(args):
-    import json
     from .cinema import Cinema
     run = Path(args.run)
     if not (run / "population.json").exists():
@@ -119,8 +150,8 @@ def cmd_replay(args):
     meta = json.loads(meta_f.read_text()) if meta_f.exists() else {}
     if "holdout_start" not in meta or args.market:          # older runs: rebuild settings from flags
         market = args.market or meta.get("market", "us")
-        px = data.load(market)
-        _, hs = _split(px, args.holdout_years, market)
+        panel = data.load(market)
+        hs = _holdout_start(panel, args.holdout_years, market)
         meta.update(market=market, holdout_start=str(hs.date()),
                     market_label=MARKET_LABEL.get(market, market), islands=meta.get("islands", 4))
         meta_f.write_text(json.dumps(meta, indent=1))
@@ -133,17 +164,19 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd")
 
     def common(sp):
-        sp.add_argument("--market", default="us", choices=["us", "india", "crypto", "industries", "synthetic"])
+        sp.add_argument("--market", default="us", choices=list(MARKET_LABEL))
         sp.add_argument("--tickers", help="comma-separated Yahoo symbols (overrides the market's universe)")
-        sp.add_argument("--start", help="first date to use, e.g. 2005-01-01")
+        sp.add_argument("--start", help="first date to use, e.g. 2012-01-01")
         sp.add_argument("--holdout-years", type=float, default=None,
                         help="years sealed away for the exam (default 3; 1.5 for crypto)")
+        sp.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
 
     ev = sub.add_parser("evolve", help="evolve strategies")
     common(ev)
     ev.add_argument("--provider", default="auto",
                     choices=["auto", "anthropic", "openai", "ollama", "compatible", "claude-code", "none"])
     ev.add_argument("--model")
+    ev.add_argument("--strong-model", help="model for crossovers and new ideas, e.g. opus")
     ev.add_argument("--base-url")
     ev.add_argument("--api-key")
     ev.add_argument("--generations", type=int, default=20)
@@ -152,9 +185,11 @@ def main(argv=None):
     ev.add_argument("--offspring", type=int, default=4, help="children per island per generation")
     ev.add_argument("--exam-budget", type=int, default=10)
     ev.add_argument("--alpha", type=float, default=0.05, help="false-certification rate of the sealed exam")
-    ev.add_argument("--workers", type=int, default=6)
+    ev.add_argument("--workers", type=int, default=6, help="parallel AI requests")
+    ev.add_argument("--lab-workers", type=int, default=4, help="parallel backtest processes")
     ev.add_argument("--seed", type=int, default=0)
     ev.add_argument("--out", default="runs")
+    ev.add_argument("--no-team", action="store_true", help="skip building a team of survivors at the end")
     ev.add_argument("--no-reveal", action="store_true", help="skip the animated exam reveal at the end")
 
     dm = sub.add_parser("demo", help="offline demo on a synthetic market (no AI, no network)")
@@ -179,8 +214,9 @@ def main(argv=None):
         return cmd_evolve(args)
     if args.cmd == "demo":
         ns = argparse.Namespace(market="synthetic", tickers=None, start=None, holdout_years=5.0, provider="none",
-                                model=None, base_url=None, api_key=None, generations=args.generations, islands=4,
-                                island_size=8, offspring=4, exam_budget=10, workers=6, seed=0, out=args.out)
+                                model=None, strong_model=None, base_url=None, api_key=None,
+                                generations=args.generations, islands=4, island_size=8, offspring=4, exam_budget=10,
+                                workers=6, lab_workers=4, seed=0, out=args.out, sec_contact=None)
         return cmd_evolve(ns, demo=True)
     if args.cmd == "backtest":
         return cmd_backtest(args)

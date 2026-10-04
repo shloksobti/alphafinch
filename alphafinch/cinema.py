@@ -24,7 +24,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from . import data, engine, fitness, sandbox
+from . import data, fitness
+from .lab import Lab
 from .braille import chart
 from .ui import OP_ICON
 
@@ -53,16 +54,23 @@ def exam_reveal(live, name, span, mkt_hold, rev, verdict, bar, width, sleep):
                       title=f"🔒 the sealed years, {span}: growth of $1", border_style="#f9e2af", width=width)
         live.update(panel, refresh=True)
         sleep(0.05)
-    passed = verdict == "PASS"
-    stamp = Text.assemble(("  ✅ PASS  " if passed else "  ❌ FAIL  ",
-                           "bold #ffffff on #1a7f37" if passed else "bold #ffffff on #cf222e"),
+    grade = rev.get("grade", verdict)
+    passed = grade == "PASS"
+    label, colour = {"PASS": ("  ✅ PASS  ", "#1a7f37"), "PROMISING": ("  🤔 PROMISING  ", "#9a6700"),
+                     "FAIL": ("  ❌ FAIL  ", "#cf222e")}[grade]
+    stamp = Text.assemble((label, f"bold #ffffff on {colour}"),
                           (f"   sealed-years alpha {rev['alpha']:+.1%}/yr  ·  t = {rev['alpha_t']:.2f}  ·  bar {bar:.2f}", "white"))
     if passed:
         moral = Text("  It beat the market by more than luck can explain.", style="bold #a6e3a1")
     else:
         mkt_cagr = mkt_hold[-1] ** (252 / max(len(mkt_hold) - 1, 1)) - 1
-        moral = Text(f"  It made {rev['cagr']:+.0%} a year; buying everything made {mkt_cagr:+.0%}. "
-                     "No proof of a real edge.", style="bold #f9e2af")
+        yn = rev.get("years_needed")
+        if grade == "PROMISING":
+            tail = f"Promising: an edge this size needs ~{yn:.0f} years of data to prove." if yn else "Promising, but unproven."
+        else:
+            tail = "No proof of a real edge."
+        moral = Text(f"  It made {rev['cagr']:+.0%} a year; buying everything made {mkt_cagr:+.0%}. {tail}",
+                     style="bold #f9e2af")
     live.update(Group(panel, stamp, moral), refresh=True)
     sleep(3.5)
 
@@ -82,8 +90,8 @@ class Cinema:
     def _sleep(self, s):
         time.sleep(s / self.speed)
 
-    def _equity(self, code, px):
-        r, _ = engine.backtest(code, px, check_leaks=False)
+    def _equity(self, code):
+        r = self.lab.run(code, "train", check_leaks=False).returns
         return (1 + r).cumprod().values
 
     def _code_panel(self, ind, parent_code, shown_lines, title_extra=""):
@@ -128,8 +136,8 @@ class Cinema:
         tickers = self.meta.get("tickers")
         px = data.load(market, tickers.split(",") if tickers else None, self.meta.get("start"))
         hold = pd.Timestamp(self.meta["holdout_start"])
-        train = px[px.index < hold]
-        self.mkt_train = (1 + train.pct_change().fillna(0).mean(axis=1)).cumprod().values
+        self.lab = Lab(px, hold, workers=2)
+        self.mkt_train = (1 + self.lab.mkt["train"]).cumprod().values
         ordered = sorted([p for p in self.pop if p["fitness"] is not None], key=lambda p: p["id"])
         self.seeds = [p for p in ordered if p["op"] == "seed"]
         self.children = [p for p in ordered if p["op"] not in ("seed", "migrant")]
@@ -147,13 +155,14 @@ class Cinema:
         for cid in self.featured:
             c = self.by_id[cid]
             par = self.by_id.get(c["parents"][0]) if c["parents"] else None
-            self.eq[cid] = self._equity(c["code"], train)
+            self.eq[cid] = self._equity(c["code"])
             if par:
-                self.eq[par["id"]] = self._equity(par["code"], train)
-        self.exam = fitness.SealedExam(px, hold, budget=self.meta.get("exam_budget", 10))
+                self.eq[par["id"]] = self._equity(par["code"])
+        self.exam = fitness.SealedExam(self.lab, budget=self.meta.get("exam_budget", 10),
+                                       alpha=self.meta.get("alpha", 0.05))
         self.rev = self.exam.reveal(self.champ["id"], self.champ["code"])
-        hold_px = px[px.index >= hold]
-        self.mkt_hold = (1 + hold_px.pct_change().fillna(0).mean(axis=1)).cumprod().values
+        self.mkt_hold = self.rev["market_equity"].values
+        self.lab.close()
         self.span = f"{hold.strftime('%b %Y')} – {px.index[-1].strftime('%b %Y')}"
         v = next((e["verdict"] for e in self.meta.get("exam", []) if e["id"] == self.champ["id"]), None)
         self.verdict = v or ("PASS" if self.rev["alpha_t"] > self.exam.bar else "FAIL")

@@ -1,13 +1,13 @@
-"""Fitness (training period only) and the sealed exam (holdout period, PASS/FAIL only).
+"""Fitness (training period only), the sealed exam, and the graded verdict.
 
-Fitness rewards risk-adjusted return that is *consistent* across years and penalises heavy
-trading and bloated code. The holdout is never used for fitness or shown to the AI.
+Fitness rewards an edge that holds up in EVERY era of the training period, not one lucky stretch:
+each of four eras is scored (half Sharpe, half appraisal ratio = alpha per unit of active risk),
+and fitness blends the median era with the worst era. Penalties for heavy trading, bloated code
+and mostly-cash portfolios. The holdout is never used for fitness or shown to the AI.
 
-The exam: a champion's holdout ALPHA t-statistic (return not explained by its exposure to the
-equal-weight market) must clear a bar that accounts for every exam
-attempt in the run (t > t^{-1}(alpha / K) for an exam budget K). Because each attempt reveals
-only one bit, this bar is valid no matter how adaptively the population evolved
-("deflate by bits, not trials").
+The sealed exam answers PASS/FAIL only, at most `budget` times. To pass, a strategy's holdout
+alpha t-statistic must exceed t^{-1}(alpha / budget). Because each attempt reveals one bit, this
+bar is valid however adaptively the population evolved ("deflate by bits, not trials").
 """
 from __future__ import annotations
 
@@ -17,31 +17,47 @@ import numpy as np
 import pandas as pd
 from scipy import stats as sstats
 
-from .engine import Stats, alpha_stats, portfolio_returns, normalise, stats as compute_stats
-from . import sandbox
+from .engine import Stats, alpha_stats, stats as compute_stats
 
 
 def fitness(s: Stats, code: str) -> float:
     if s.n_days < 252:
         return -9.0
-    yearly = np.array(list(s.yearly.values()))
-    hit = float((yearly > 0).mean()) if len(yearly) else 0.0
-    consistency = 0.5 * (hit - 0.5)                         # +/-0.25 for always up / always down
+    if s.eras:
+        scores = np.array([e["score"] for e in s.eras])
+        core = 0.5 * float(np.median(scores)) + 0.5 * float(scores.min())
+    else:
+        core = 0.5 * s.sharpe + 0.5 * s.appraisal
     trading = 0.02 * max(0.0, s.turnover - 12.0)            # > ~monthly full rebalancing costs extra
-    bloat = 0.0005 * max(0, len(code) - 1500)               # Occam: long code must earn its keep
+    bloat = 0.0006 * max(0, len(code) - 1500)               # Occam: long code must earn its keep
     lev = 0.5 * max(0.0, 0.2 - s.exposure)                  # mostly-cash strategies are not alpha
-    # half Sharpe (is it a good investment?) + half appraisal ratio (does it beat the market?)
-    return float(0.5 * s.sharpe + 0.5 * s.appraisal + consistency - trading - bloat - lev)
+    return float(core - trading - bloat - lev)
+
+
+def verdict_grade(alpha_t: float, bar: float) -> str:
+    """Graded reading of a holdout result (shown only after a run has finished)."""
+    if alpha_t > bar:
+        return "PASS"
+    if alpha_t > 1.0:
+        return "PROMISING"
+    return "FAIL"
+
+
+def years_needed(appraisal: float, bar: float) -> float | None:
+    """Years of out-of-sample data needed for an edge of this size to clear the bar."""
+    if appraisal <= 0.05:
+        return None
+    return (bar / appraisal) ** 2
 
 
 class SealedExam:
     """Holds the holdout. Only answers PASS/FAIL, at most `budget` times."""
 
-    def __init__(self, prices_full: pd.DataFrame, holdout_start, budget: int = 10, alpha: float = 0.05):
-        self._px = prices_full
-        self._start = pd.Timestamp(holdout_start)
+    def __init__(self, lab, budget: int = 10, alpha: float = 0.05):
+        self.lab = lab
+        self._start = lab.hold
         self.budget, self.alpha = budget, alpha
-        n_hold = int((prices_full.index >= self._start).sum())
+        n_hold = int((lab.full.index >= self._start).sum())
         self.bar = float(sstats.t.isf(alpha / budget, df=max(n_hold - 1, 1)))
         self.attempts: list[dict] = []
 
@@ -49,15 +65,17 @@ class SealedExam:
     def left(self) -> int:
         return self.budget - len(self.attempts)
 
+    def _holdout(self, code: str):
+        res = self.lab.run(code, split="full", check_leaks=False)   # code is causal: run on all history
+        mask = res.returns.index >= self._start
+        return res, mask
+
     def sit(self, sid: str, code: str) -> str:
         if self.left <= 0:
             return "EXHAUSTED"
         try:
-            w = sandbox.run(code, self._px)           # causal code: run on full history, score holdout rows
-            r, to, held = portfolio_returns(w, self._px)
-            mkt = self._px.pct_change().mean(axis=1).fillna(0)
-            mask = r.index >= self._start
-            t = alpha_stats(r[mask], mkt[mask])[3]
+            res, mask = self._holdout(code)
+            t = alpha_stats(res.returns[mask], self.lab.mkt["full"][mask])[3]
             verdict = "PASS" if t > self.bar else "FAIL"
         except Exception:
             verdict, t = "FAIL", float("nan")
@@ -66,10 +84,13 @@ class SealedExam:
 
     def reveal(self, sid: str, code: str) -> dict:
         """Full holdout statistics. Call only AFTER evolution has finished."""
-        w = sandbox.run(code, self._px)
-        r, to, held = portfolio_returns(w, self._px)
-        mask = r.index >= self._start
-        s = compute_stats(r[mask], to[mask], held[mask], self._px[mask])
+        res, mask = self._holdout(code)
+        s = compute_stats(res.returns[mask], res.turnover[mask], res.gross[mask], self.lab.mkt["full"][mask],
+                          eras=False)
+        mkt = self.lab.mkt["full"][mask]
+        mkt_eq = (1 + mkt).cumprod()
         return {"sharpe": s.sharpe, "cagr": s.cagr, "max_dd": s.max_dd, "t": s.t, "alpha": s.alpha,
-                "alpha_t": s.alpha_t, "beta": s.beta,
-                "equity": (1 + r[mask]).cumprod()}
+                "alpha_t": s.alpha_t, "appraisal": s.appraisal, "beta": s.beta,
+                "grade": verdict_grade(s.alpha_t, self.bar), "years_needed": years_needed(s.appraisal, self.bar),
+                "equity": (1 + res.returns[mask]).cumprod(), "market_equity": mkt_eq,
+                "market_cagr": float(mkt_eq.iloc[-1] ** (252 / max(len(mkt_eq) - 1, 1)) - 1)}

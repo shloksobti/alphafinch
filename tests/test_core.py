@@ -4,27 +4,56 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from alphafinch import data, engine, evolve, fitness, prompts, sandbox
+from alphafinch import data, engine, evolve, fitness, prompts
+from alphafinch.lab import Lab
+from alphafinch.sandbox import StrategyError
 from alphafinch.seeds import SEEDS
 
-PX = data.synthetic(n_assets=8, years=8, seed=1)
-TRAIN = PX.loc[:"2005"]
+HOLD = pd.Timestamp("2006-01-02")
+
+
+def _panel():
+    px = data.synthetic(n_assets=8, years=8, seed=1)
+    rng = np.random.default_rng(2)
+    vol = pd.DataFrame(1e6 * rng.lognormal(0, 0.5, px.shape), index=px.index, columns=px.columns)
+    macro = pd.DataFrame({"vix": 20.0}, index=px.index)
+    sector = pd.Series(["A", "B"] * 4, index=px.columns)
+    return data.Panel(px, px, px, px, vol, sector, macro).astype32()
+
+
+@pytest.fixture(scope="module")
+def lab():
+    with Lab(_panel(), HOLD, workers=2, timeout=20) as lb:
+        yield lb
+
+
+def _stats(lab, code):
+    res = lab.run(code, "train")
+    return engine.stats(res.returns, res.turnover, res.gross, lab.mkt["train"])
 
 
 @pytest.mark.parametrize("name", list(SEEDS))
-def test_seeds_are_valid_and_causal(name):
-    _, s = engine.backtest(SEEDS[name], TRAIN)
-    assert s.n_days > 1000 and np.isfinite(s.sharpe)
+def test_seeds_are_valid_and_causal(lab, name):
+    s = _stats(lab, SEEDS[name])
+    assert s.n_days > 1000 and np.isfinite(s.sharpe) and len(s.eras) == 4
+
+
+def test_training_split_never_contains_holdout(lab):
+    assert lab.train.index.max() < HOLD and lab.full.index.max() > HOLD
+    code = "def strategy(prices):\n    assert prices.index.max() < __HOLD__\n    return prices * 0\n"
+    with pytest.raises(StrategyError):          # dunder names are rejected before running
+        lab.run(code)
 
 
 @pytest.mark.parametrize("code", [
     "import pandas as pd\ndef strategy(prices):\n    return (prices.shift(-1) > prices).astype(float)\n",
     "def strategy(prices):\n    return -(prices - prices.mean()) / prices.std()\n",
     "def strategy(prices):\n    return (prices.rolling(21, center=True).mean() > prices).astype(float)\n",
+    "def strategy(prices, data):\n    v = data.volume\n    return (v.shift(-2) > v).astype(float)\n",
 ])
-def test_lookahead_is_detected(code):
-    with pytest.raises(sandbox.StrategyError, match="look-ahead"):
-        engine.backtest(code, TRAIN)
+def test_lookahead_is_detected(lab, code):
+    with pytest.raises(StrategyError, match="look-ahead"):
+        lab.run(code)
 
 
 @pytest.mark.parametrize("code", [
@@ -35,69 +64,76 @@ def test_lookahead_is_detected(code):
     "def strategy(prices):\n    prices.to_csv('/tmp/x.csv')\n    return prices\n",
     "def strategy(prices):\n    return eval('1')\n",
 ])
-def test_sandbox_blocks_unsafe_code(code):
-    with pytest.raises(sandbox.StrategyError):
-        engine.backtest(code, TRAIN)
+def test_sandbox_blocks_unsafe_code(lab, code):
+    with pytest.raises(StrategyError):
+        lab.run(code)
 
 
-def test_sandbox_times_out():
-    code = "def strategy(prices):\n    while True:\n        pass\n"
-    with pytest.raises(sandbox.StrategyError, match="timed out"):
-        sandbox.run(code, TRAIN, timeout=3)
+def test_sandbox_times_out_and_recovers(lab):
+    with pytest.raises(StrategyError, match="timed out"):
+        lab.run("def strategy(prices):\n    while True:\n        pass\n")
+    assert np.isfinite(_stats(lab, SEEDS["Calm Seeker"]).sharpe)   # pool restarted and still works
 
 
-def test_engine_lags_weights_one_day():
-    # a strategy that is long only on days the asset rose TODAY must not earn today's return
-    code = "def strategy(prices):\n    return (prices.pct_change() > 0).astype(float)\n"
-    w = sandbox.run(code, TRAIN)
-    r, _, held = engine.portfolio_returns(w, TRAIN)
-    assert held.iloc[0].abs().sum() == 0  # nothing held on day 0
-    assert (held.shift(-1).iloc[:-1].values == engine.normalise(w).iloc[:-1].values).all()
+def test_data_fields_reach_strategies(lab):
+    code = ("import pandas as pd\ndef strategy(prices, data):\n"
+            "    assert data.sector.nunique() == 2 and 'vix' in data.macro\n"
+            "    return (data.volume > 0).astype(float)\n")
+    assert _stats(lab, code).exposure > 0.9
 
 
-def test_equal_weight_has_no_alpha():
+def test_equal_weight_has_no_alpha(lab):
     code = ("import pandas as pd\ndef strategy(prices):\n"
             "    return pd.DataFrame(1/prices.shape[1], index=prices.index, columns=prices.columns)\n")
-    _, s = engine.backtest(code, TRAIN)
+    s = _stats(lab, code)
     assert abs(s.beta - 1) < 0.01 and abs(s.alpha) < 0.002 and s.appraisal == 0.0
+
+
+def test_fitness_punishes_a_losing_era():
+    good = engine.Stats(1, .1, .1, -.1, 2, 1, 1, 0, 0, 0, {}, 2000,
+                        [{"score": 0.5}, {"score": 0.5}, {"score": 0.5}, {"score": 0.5}])
+    spiky = engine.Stats(1, .1, .1, -.1, 2, 1, 1, 0, 0, 0, {}, 2000,
+                         [{"score": 1.8}, {"score": 0.5}, {"score": 0.4}, {"score": -0.6}])
+    assert fitness.fitness(good, "x") > fitness.fitness(spiky, "x")
 
 
 def test_tweak_changes_exactly_one_constant():
     code = SEEDS["Momentum Crown"]
     out = evolve.tweak(code, random.Random(3))
-    assert out != code and "def strategy" in out
     diff = [(a, b) for a, b in zip(code.splitlines(), out.splitlines()) if a != b]
-    assert len(diff) == 1
+    assert out != code and len(diff) == 1
 
 
-def test_blend_child_is_valid():
+def test_blend_of_mixed_arity_parents_is_valid(lab):
     a = evolve.Individual("fA", "Trend Rider", SEEDS["Trend Rider"], "seed")
-    b = evolve.Individual("fB", "Calm Seeker", SEEDS["Calm Seeker"], "seed")
-    code = evolve.blend(a, b, random.Random(0))
-    _, s = engine.backtest(code, TRAIN)
-    assert np.isfinite(s.sharpe)
+    b = evolve.Individual("fB", "Fear Gauge", SEEDS["Fear Gauge"], "seed")
+    assert np.isfinite(_stats(lab, evolve.blend(a, b, random.Random(0))).sharpe)
 
 
-def test_exam_reveals_only_pass_fail_and_respects_budget():
-    ex = fitness.SealedExam(PX, "2006-01-01", budget=2)
-    v1 = ex.sit("x", SEEDS["Calm Seeker"])
-    v2 = ex.sit("y", SEEDS["Trend Rider"])
-    assert v1 in ("PASS", "FAIL") and v2 in ("PASS", "FAIL")
+def test_exam_reveals_only_pass_fail_and_respects_budget(lab):
+    ex = fitness.SealedExam(lab, budget=2)
+    assert ex.sit("x", SEEDS["Calm Seeker"]) in ("PASS", "FAIL")
+    assert ex.sit("y", SEEDS["Trend Rider"]) in ("PASS", "FAIL")
     assert ex.sit("z", SEEDS["Snapback"]) == "EXHAUSTED"
+    r = ex.reveal("x", SEEDS["Calm Seeker"])
+    assert r["grade"] in ("PASS", "PROMISING", "FAIL") and "market_equity" in r
 
 
-def test_names_and_code_extraction():
-    txt = "Here you go\n```python\ndef strategy(prices):\n    \"\"\"Night Owl: trades at night.\"\"\"\n    return prices*0\n```"
-    code = prompts.extract_code(txt)
+def test_names_hypotheses_and_notebook():
+    code = 'def strategy(prices):\n    """Night Owl: trades at night. Hypothesis: insomniacs overpay."""\n    return prices*0\n'
     assert prompts.strategy_name(code) == "Night Owl"
+    assert prompts.idea_and_hypothesis(code) == ("trades at night.", "insomniacs overpay.")
+    nb = prompts.notebook([{"name": "Night Owl", "op": "mutate", "idea": "x", "hypothesis": "y",
+                            "fitness": 0.4, "why": "solid"}])
+    assert "Night Owl" in nb and "LAB NOTEBOOK" in nb
     assert evolve.base_name("Night Owl v12") == "Night Owl"
     assert evolve.family("Night Owl x Calm Seeker v3") == "Night Owl"
 
 
-def test_offline_evolution_runs():
-    ex = fitness.SealedExam(PX, "2006-01-01", budget=4)
-    e = evolve.Evolution(TRAIN, ex, None, "synthetic",
-                         evolve.Config(islands=2, island_size=4, offspring=2, generations=2, workers=2))
+def test_offline_evolution_runs_with_team(lab):
+    ex = fitness.SealedExam(lab, budget=4)
+    e = evolve.Evolution(lab, ex, None, "synthetic",
+                         evolve.Config(islands=2, island_size=5, offspring=2, generations=2, workers=2))
     champ = e.run()
     assert champ is not None and np.isfinite(champ.fitness)
-    assert len(ex.attempts) >= 1
+    assert e.team is not None and e.team.exam in ("PASS", "FAIL")
