@@ -5,6 +5,8 @@
   alphafinch evolve --market india      Indian stocks (NIFTY 200)
   alphafinch backtest my_strategy.py    backtest one strategy file on the training period
   alphafinch replay runs/<timestamp>    re-animate a finished run as a short story
+  alphafinch forward freeze runs/<ts>   freeze a run's champion and team for a forward test
+  alphafinch forward score              judge frozen strategies on data after their freeze date
   alphafinch markets                    list built-in markets
 """
 from __future__ import annotations
@@ -159,6 +161,32 @@ def cmd_replay(args):
     return 0
 
 
+def cmd_forward(args):
+    from . import forward
+    if args.sec_contact:
+        os.environ["ALPHAFINCH_SEC_CONTACT"] = args.sec_contact
+    if args.action == "freeze":
+        if not args.run:
+            console.print("[red]usage: alphafinch forward freeze runs/<timestamp>[/]")
+            return 1
+        added = forward.freeze(args.run, args.dir)
+        for e in added:
+            console.print(f"[green]✓[/] froze {e['name']} (judged on data after {e['frozen_through']})")
+        if not added:
+            console.print("[dim]Nothing new to freeze.[/]")
+        return 0
+    rows = forward.score(args.dir)
+    for r in rows:
+        if r["grade"] == "WAITING":
+            console.print(f"[dim]{r['name']}: {r['days']} new trading days since {r['frozen_through']}, waiting[/]")
+            continue
+        colour = {"PASS": "green", "PROMISING": "#9a6700", "FAIL": "red"}[r["grade"]]
+        console.print(f"[bold]{r['name']}[/] · {r['days']} days after {r['frozen_through']} · "
+                      f"return {r['return']:+.1%} vs market {r['market_return']:+.1%} · alpha {r['alpha']:+.1%}/yr · "
+                      f"t {r['alpha_t']:+.2f} (bar {r['bar']:.2f}) · [{colour}]{r['grade']}[/]")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="alphafinch", description="Evolve trading strategies with AI, honestly.")
     sub = p.add_subparsers(dest="cmd")
@@ -207,6 +235,12 @@ def main(argv=None):
     rp.add_argument("--market", help="only for runs saved before meta.json existed")
     rp.add_argument("--holdout-years", type=float, default=None)
 
+    fw = sub.add_parser("forward", help="forward test: freeze strategies now, judge them on future data")
+    fw.add_argument("action", choices=["freeze", "score"])
+    fw.add_argument("run", nargs="?", help="run directory to freeze")
+    fw.add_argument("--dir", default="forward", help="where frozen strategies live")
+    fw.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
+
     sub.add_parser("markets", help="list built-in markets")
 
     args = p.parse_args(argv)
@@ -222,6 +256,8 @@ def main(argv=None):
         return cmd_backtest(args)
     if args.cmd == "replay":
         return cmd_replay(args)
+    if args.cmd == "forward":
+        return cmd_forward(args)
     if args.cmd == "markets":
         for k, v in MARKET_LABEL.items():
             console.print(f"[bold]{k:11s}[/] {v}")

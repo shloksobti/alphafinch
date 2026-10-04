@@ -175,6 +175,8 @@ def write(evo, out_dir: Path, market_label: str, holdout_start) -> Path:
     path = out_dir / "report.html"
     path.write_text(doc)
     (out_dir / "champion.py").write_text(champ.code)
+    if evo.team is not None:
+        (out_dir / "team.py").write_text(evo.team.code)
     (out_dir / "population.json").write_text(json.dumps([
         {"id": p.id, "name": p.name, "op": p.op, "parents": list(p.parents), "gen": p.gen, "island": p.island,
          "fitness": None if p.stats is None else p.fitness, "raw_fitness": p.raw_fitness, "robust": p.robust,
