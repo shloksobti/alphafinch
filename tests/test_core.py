@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from alphafinch import data, engine, evolve, fitness, prompts
+from alphafinch import data, engine, evolve, fitness, prompts, world
 from alphafinch.lab import Lab
 from alphafinch.sandbox import StrategyError
 from alphafinch.seeds import SEEDS
@@ -190,3 +190,36 @@ def test_v1_search_still_runs(lab):
                          evolve.Config(islands=2, island_size=5, offspring=2, generations=2, workers=2, search="v1"))
     assert np.isfinite(e.run().fitness)
     assert "tk." not in prompts.system("x", "v1") and "tk.neutralize" in prompts.system("x")
+
+
+def _world_panels(n=3):
+    out = {}
+    for i in range(n):
+        px = data.synthetic(n_assets=12, years=8, seed=10 + i)
+        rng = np.random.default_rng(i)
+        vol = pd.DataFrame(1e6 * rng.lognormal(0, 0.5, px.shape), index=px.index, columns=px.columns)
+        out[f"m{i}"] = data.Panel(px, px, px, px, vol, pd.Series(["Banks", "Energy", "Tech"] * 4, index=px.columns),
+                                  pd.DataFrame({"vix": 20.0}, index=px.index)).astype32()
+    return out
+
+
+def test_newey_west_t_is_calibrated_on_noise():
+    rng = np.random.default_rng(0)
+    ts = [world.newey_west_t(rng.normal(0, 0.01, 1500))[1] for _ in range(200)]
+    assert abs(np.mean(ts)) < 0.25 and 0.8 < np.std(ts) < 1.25
+
+
+def test_world_exam_placebos_fail_and_errors_are_reported():
+    from alphafinch import world
+    eq = ("import pandas as pd\ndef strategy(prices):\n"
+          "    return pd.DataFrame(1/prices.shape[1], index=prices.index, columns=prices.columns)\n")
+    fund = "def strategy(prices, data):\n    return data.fund['earnings_yield'] * 0 + prices * 0\n"
+    rnd = ("import numpy as np, pandas as pd\ndef strategy(prices):\n"
+           "    h = (np.arange(prices.shape[1])[None, :] * 7 + np.arange(len(prices))[:, None] // 21) % 5\n"
+           "    return pd.DataFrame((h == 0) * 1.0 - (h == 1) * 1.0, index=prices.index, columns=prices.columns) / 4\n")
+    res = {r["name"]: r for r in world.exam({"eq": eq, "fund": fund, "rnd": rnd}, _world_panels(),
+                                             start="2003-01-02", workers=2)}
+    assert res["eq"]["pooled_t"] == 0.0 and res["eq"]["grade"] == "FAIL"
+    assert res["fund"]["grade"] == "NOT RUN" and all("error" in v for v in res["fund"]["markets"].values())
+    assert res["rnd"]["n_markets"] == 3 and res["rnd"]["K"] == 3
+    assert res["rnd"]["bar"] > 2.0 and res["rnd"]["grade"] != "PASS"

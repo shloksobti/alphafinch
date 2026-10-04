@@ -9,6 +9,10 @@ import pandas as pd
 import requests
 
 CACHE = Path.home() / ".alphafinch" / "universes"
+SNAPSHOTS = Path(__file__).parent / "universes"       # shipped member lists (scripts/build_world_universes.py)
+WORLD = {"uk": "FTSE 100", "europe": "Eurozone large caps (DAX, CAC 40, IBEX 35, FTSE MIB, AEX)",
+         "japan": "Nikkei 225", "hongkong": "Hang Seng", "australia": "S&P/ASX 200", "canada": "S&P/TSX 60",
+         "korea": "KOSPI 200"}
 SP500_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
 NIFTY_URL = "https://archives.nseindia.com/content/indices/ind_nifty{n}list.csv"
 UA = {"User-Agent": "Mozilla/5.0 (alphafinch; https://github.com/shloksobti/alphafinch)"}
@@ -60,4 +64,6 @@ def get(market: str) -> pd.DataFrame:
         return pd.DataFrame({"symbol": US30, "sector": "Unknown", "cik": 0})
     if market == "crypto":
         return pd.DataFrame({"symbol": CRYPTO, "sector": "Crypto"})
+    if market in WORLD:
+        return pd.read_csv(SNAPSHOTS / f"{market}.csv", dtype=str)
     raise ValueError(market)

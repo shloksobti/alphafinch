@@ -1,0 +1,226 @@
+symbol,sector
+285A.T,Electric Machinery
+4062.T,Electric Machinery
+6479.T,Electric Machinery
+6501.T,Electric Machinery
+6503.T,Electric Machinery
+6504.T,Electric Machinery
+6506.T,Electric Machinery
+6525.T,Electric Machinery
+6526.T,Electric Machinery
+6645.T,Electric Machinery
+6701.T,Electric Machinery
+6702.T,Electric Machinery
+6723.T,Electric Machinery
+6724.T,Electric Machinery
+6752.T,Electric Machinery
+6753.T,Electric Machinery
+6758.T,Electric Machinery
+6762.T,Electric Machinery
+6770.T,Electric Machinery
+6841.T,Electric Machinery
+6857.T,Electric Machinery
+6861.T,Electric Machinery
+6902.T,Electric Machinery
+6920.T,Electric Machinery
+6954.T,Electric Machinery
+6963.T,Electric Machinery
+6971.T,Electric Machinery
+6976.T,Electric Machinery
+6981.T,Electric Machinery
+7735.T,Electric Machinery
+7751.T,Electric Machinery
+7752.T,Electric Machinery
+8035.T,Electric Machinery
+7201.T,Automobiles & Auto parts
+7202.T,Automobiles & Auto parts
+7203.T,Automobiles & Auto parts
+7211.T,Automobiles & Auto parts
+7261.T,Automobiles & Auto parts
+7267.T,Automobiles & Auto parts
+7269.T,Automobiles & Auto parts
+7270.T,Automobiles & Auto parts
+7272.T,Automobiles & Auto parts
+4543.T,Precision Instruments
+6146.T,Precision Instruments
+7731.T,Precision Instruments
+7733.T,Precision Instruments
+7741.T,Precision Instruments
+2432.T,Information and communication
+3659.T,Information and communication
+3697.T,Information and communication
+4307.T,Information and communication
+4385.T,Information and communication
+4689.T,Information and communication
+4704.T,Information and communication
+7974.T,Information and communication
+9432.T,Information and communication
+9433.T,Information and communication
+9434.T,Information and communication
+9602.T,Information and communication
+9697.T,Information and communication
+9766.T,Information and communication
+9984.T,Information and communication
+5831.T,Banking
+7186.T,Banking
+8304.T,Banking
+8306.T,Banking
+8308.T,Banking
+8309.T,Banking
+8316.T,Banking
+8331.T,Banking
+8354.T,Banking
+8411.T,Banking
+8253.T,Other Financial Services
+8591.T,Other Financial Services
+8697.T,Other Financial Services
+8601.T,Securities
+8604.T,Securities
+8630.T,Insurance
+8725.T,Insurance
+8750.T,Insurance
+8766.T,Insurance
+8795.T,Insurance
+1332.T,Fishery
+2002.T,Foods
+2269.T,Foods
+2282.T,Foods
+2501.T,Foods
+2502.T,Foods
+2503.T,Foods
+2801.T,Foods
+2802.T,Foods
+2871.T,Foods
+2914.T,Foods
+4151.T,Pharmaceuticals
+4502.T,Pharmaceuticals
+4503.T,Pharmaceuticals
+4506.T,Pharmaceuticals
+4507.T,Pharmaceuticals
+4519.T,Pharmaceuticals
+4523.T,Pharmaceuticals
+4568.T,Pharmaceuticals
+4578.T,Pharmaceuticals
+3086.T,Retail
+3092.T,Retail
+3099.T,Retail
+3382.T,Retail
+7453.T,Retail
+7532.T,Retail
+8233.T,Retail
+8252.T,Retail
+8267.T,Retail
+9843.T,Retail
+9983.T,Retail
+2413.T,Services
+4324.T,Services
+4661.T,Services
+4751.T,Services
+4755.T,Services
+6098.T,Services
+6178.T,Services
+6532.T,Services
+9735.T,Services
+1605.T,Mining
+3401.T,Textiles & Apparel
+3402.T,Textiles & Apparel
+3861.T,Pulp & Paper
+3405.T,Chemicals
+3407.T,Chemicals
+4004.T,Chemicals
+4005.T,Chemicals
+4021.T,Chemicals
+4042.T,Chemicals
+4043.T,Chemicals
+4061.T,Chemicals
+4063.T,Chemicals
+4183.T,Chemicals
+4188.T,Chemicals
+4208.T,Chemicals
+4452.T,Chemicals
+4901.T,Chemicals
+4911.T,Chemicals
+6988.T,Chemicals
+5019.T,Petroleum
+5020.T,Petroleum
+5101.T,Rubber
+5108.T,Rubber
+5201.T,Glass & Ceramics
+5214.T,Glass & Ceramics
+5233.T,Glass & Ceramics
+5301.T,Glass & Ceramics
+5332.T,Glass & Ceramics
+5333.T,Glass & Ceramics
+5401.T,Steel
+5406.T,Steel
+5411.T,Steel
+3436.T,Nonferrous Metals
+5016.T,Nonferrous Metals
+5706.T,Nonferrous Metals
+5711.T,Nonferrous Metals
+5713.T,Nonferrous Metals
+5714.T,Nonferrous Metals
+5801.T,Nonferrous Metals
+5802.T,Nonferrous Metals
+5803.T,Nonferrous Metals
+2768.T,Trading Companies
+8001.T,Trading Companies
+8002.T,Trading Companies
+8015.T,Trading Companies
+8031.T,Trading Companies
+8053.T,Trading Companies
+8058.T,Trading Companies
+1721.T,Construction
+1801.T,Construction
+1802.T,Construction
+1803.T,Construction
+1808.T,Construction
+1812.T,Construction
+1925.T,Construction
+1928.T,Construction
+1963.T,Construction
+5631.T,Machinery
+6103.T,Machinery
+6113.T,Machinery
+6273.T,Machinery
+6301.T,Machinery
+6302.T,Machinery
+6305.T,Machinery
+6326.T,Machinery
+6361.T,Machinery
+6367.T,Machinery
+6471.T,Machinery
+6472.T,Machinery
+6473.T,Machinery
+7011.T,Machinery
+7013.T,Machinery
+7012.T,Shipbuilding
+7832.T,Other Manufacturing
+7911.T,Other Manufacturing
+7912.T,Other Manufacturing
+7951.T,Other Manufacturing
+3289.T,Real Estate
+8801.T,Real Estate
+8802.T,Real Estate
+8804.T,Real Estate
+8830.T,Real Estate
+9001.T,Railway & Bus
+9005.T,Railway & Bus
+9007.T,Railway & Bus
+9008.T,Railway & Bus
+9009.T,Railway & Bus
+9020.T,Railway & Bus
+9021.T,Railway & Bus
+9022.T,Railway & Bus
+9064.T,Land Transport
+9147.T,Land Transport
+9101.T,Marine Transport
+9104.T,Marine Transport
+9107.T,Marine Transport
+9201.T,Air Transport
+9202.T,Air Transport
+9501.T,Electric Power
+9502.T,Electric Power
+9503.T,Electric Power
+9531.T,Gas
+9532.T,Gas

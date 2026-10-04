@@ -7,6 +7,7 @@
   alphafinch replay runs/<timestamp>    re-animate a finished run as a short story
   alphafinch forward freeze runs/<ts>   freeze a run's champion and team for a forward test
   alphafinch forward score              judge frozen strategies on data after their freeze date
+  alphafinch world-exam a.py b.py       test frozen strategies on 7 stock markets they've never seen
   alphafinch markets                    list built-in markets
 """
 from __future__ import annotations
@@ -25,12 +26,14 @@ from . import data, engine, fitness, llm, report
 from .evolve import Config, Evolution
 from .lab import Lab
 from .sandbox import StrategyError
+from .universe import WORLD
 from .ui import LiveView
 
 console = Console()
 MARKET_LABEL = {"us": "US stocks (S&P 500)", "india": "Indian stocks (NIFTY 200)", "us30": "30 US mega-caps",
                 "crypto": "Crypto vs USDT", "industries": "49 US industry portfolios (Ken French)",
-                "synthetic": "Synthetic market (offline)"}
+                "synthetic": "Synthetic market (offline)",
+                **WORLD}
 
 
 def _load(args) -> data.Panel:
@@ -200,6 +203,42 @@ def cmd_forward(args):
     return 0
 
 
+def cmd_world_exam(args):
+    from . import world
+    strategies = {}
+    for f in args.files:
+        code = Path(f).read_text()
+        strategies[Path(f).stem] = code
+    markets = [m.strip() for m in args.markets.split(",")] if args.markets != "all" else None
+    console.print(f"[bold]World exam[/] · {len(strategies)} strategies · "
+                  f"{len(markets or WORLD)} markets · from {args.start}"
+                  + (f" · {args.prior_looks} earlier looks counted" if args.prior_looks else ""))
+    with console.status("[cyan]Running…") as stt:
+        res = world.exam(strategies, markets, args.start, args.end, args.alpha, args.prior_looks,
+                         workers=args.lab_workers, progress=lambda n, m: stt.update(f"[cyan]{n} on {m}…"))
+    colours = {"PASS": "green", "PROMISING": "#9a6700", "FAIL": "red", "NOT RUN": "dim"}
+    for r in res:
+        console.print()
+        console.print(f"[bold]{r['name']}[/]")
+        for mk, v in r["markets"].items():
+            if "error" in v:
+                console.print(f"  {mk:10s} [dim]not run: {v['error']}[/]")
+            else:
+                console.print(f"  {mk:10s} alpha {v['alpha']:+6.1%}/yr  t {v['alpha_t']:+5.2f}  beta {v['beta']:+.2f}  "
+                              f"return {v['return']:+6.1%} vs market {v['market_return']:+6.1%}")
+        if r["grade"] == "NOT RUN":
+            console.print("  [dim]could not run in any market[/]")
+            continue
+        console.print(f"  [bold]pooled[/]     alpha {r['pooled_alpha']:+6.1%}/yr  t {r['pooled_t']:+5.2f}  "
+                      f"(bar {r['bar']:.2f}, K = {r['K']})  positive in {r['positive_markets']}/{r['n_markets']} markets  "
+                      f"[{colours[r['grade']]}]{r['grade']}[/]")
+    if args.json:
+        Path(args.json).write_text(json.dumps([{k: v for k, v in r.items() if k != "pooled"} | {
+            "markets": {mk: {k: x for k, x in v.items() if k != "active"} for mk, v in r["markets"].items()}}
+            for r in res], indent=1, default=float))
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="alphafinch", description="Evolve trading strategies with AI, honestly.")
     sub = p.add_subparsers(dest="cmd")
@@ -259,6 +298,17 @@ def main(argv=None):
     fw.add_argument("--dir", default="forward", help="where frozen strategies live")
     fw.add_argument("--sec-contact", help='"Name email@domain" sent to the SEC to fetch US fundamentals')
 
+    we = sub.add_parser("world-exam", help="test frozen strategies on many markets they have never seen")
+    we.add_argument("files", nargs="+", help="strategy .py files")
+    we.add_argument("--markets", default="all", help=f"comma-separated, default all: {','.join(WORLD)}")
+    we.add_argument("--start", default="2017-10-02", help="first day of the exam window")
+    we.add_argument("--end", help="last day of the exam window (default: latest data)")
+    we.add_argument("--alpha", type=float, default=0.05)
+    we.add_argument("--prior-looks", type=int, default=0,
+                    help="strategies tested on these markets and years before (raises the bar)")
+    we.add_argument("--lab-workers", type=int, default=4)
+    we.add_argument("--json", help="also write results to this file")
+
     sub.add_parser("markets", help="list built-in markets")
 
     args = p.parse_args(argv)
@@ -277,6 +327,8 @@ def main(argv=None):
         return cmd_replay(args)
     if args.cmd == "forward":
         return cmd_forward(args)
+    if args.cmd == "world-exam":
+        return cmd_world_exam(args)
     if args.cmd == "markets":
         for k, v in MARKET_LABEL.items():
             console.print(f"[bold]{k:11s}[/] {v}")

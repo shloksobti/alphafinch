@@ -202,7 +202,7 @@ class Lab:
 
     def close(self):
         if self._pool:
-            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool.shutdown(wait=True, cancel_futures=True)
         try:
             os.unlink(self._path)
         except OSError:

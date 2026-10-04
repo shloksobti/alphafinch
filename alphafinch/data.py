@@ -9,7 +9,8 @@ A Panel holds everything a strategy may look at, aligned on trading days:
                                    (US only, from SEC filings: each value appears the day after
                                    the filing that disclosed it)
 
-Markets: us (S&P 500), india (NIFTY 200), us30, crypto, industries (Ken French), synthetic.
+Markets: us (S&P 500), india (NIFTY 200), us30, crypto, industries (Ken French), synthetic, and the
+world markets uk, europe, japan, hongkong, australia, canada, korea (see universe.WORLD).
 """
 from __future__ import annotations
 
@@ -38,7 +39,9 @@ def _sec_headers():
     contact = os.environ.get("ALPHAFINCH_SEC_CONTACT")
     return {"User-Agent": f"alphafinch {contact}"} if contact else None
 DEFAULT_START = {"us": "2010-01-01", "india": "2010-01-01", "us30": "2008-04-01", "crypto": "2020-10-01",
-                 "industries": "1970-01-01"}
+                 "industries": "1970-01-01", **{m: "2010-01-01" for m in uni.WORLD}}
+WORLD_INDEX = {"uk": "^FTSE", "europe": "^STOXX50E", "japan": "^N225", "hongkong": "^HSI", "australia": "^AXJO",
+               "canada": "^GSPTSE", "korea": "^KS11"}
 
 MACRO = {
     "us": {"yahoo": {"vix": "^VIX", "index": "^GSPC", "oil": "CL=F", "gold": "GC=F"},
@@ -49,6 +52,9 @@ MACRO = {
     "us30": {"yahoo": {"vix": "^VIX", "index": "^GSPC"}, "fred": {"rate_10y": ("DGS10", 1)}},
     "crypto": {"yahoo": {"vix": "^VIX", "index": "^GSPC"}, "fred": {"rate_10y": ("DGS10", 1)}},
 }
+for _m, _ix in WORLD_INDEX.items():         # world markets: local index; the US VIX as the global fear gauge
+    MACRO[_m] = {"yahoo": {"vix": "^VIX", "index": _ix, "oil": "CL=F", "gold": "GC=F"},
+                 "fred": {"us_rate_10y": ("DGS10", 1)}}
 
 
 @dataclass
