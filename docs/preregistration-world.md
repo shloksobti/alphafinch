@@ -69,3 +69,57 @@ costs, placebos lost 0.9%/yr and none came close to passing.
    currency, so alpha is currency-neutral.
 
 All five results are reported whatever they show.
+
+## Results (appended 2026-10-04, after the run; nothing above was changed)
+
+**Primary window (2017-10-02 → 2026-10-02), bar 2.33: 1 of 5 passed.**
+
+| Strategy | Pooled alpha/yr | Verdict t (NW / Stouffer) | Markets positive | Grade |
+|---|---|---|---|---|
+| **Quiet Sector Tether v2** (US-bred) | **+2.9%** | **3.40** (3.40 / 4.30) | **7 / 7** | **PASS** |
+| The Team (India s12) | +2.3% | 2.14 (2.14 / 3.70) | 6 / 7 | PROMISING |
+| Quiet Intraday Relay v2 (India s12) | +0.9% | 1.03 (1.03 / 1.89) | 5 / 7 | PROMISING |
+| The Team (India s11) | −0.6% | −0.79 | 4 / 7 | FAIL |
+| Tethered Twin Snapback (India s11) | −2.6% | −3.09 | 0 / 7 | FAIL |
+
+Per-market alpha of the passing strategy: UK +1.8%, Eurozone +3.0%, Japan +1.4%, Hong Kong +2.7%,
+Australia +4.6%, Canada +4.4%, Korea +1.6% a year. Its beta is slightly negative (−0.09 to −0.24).
+Notably, it had **failed** its stand-in test in the US (2020–23, t −0.16): it was not chosen for
+looking good.
+
+**Secondary window (2020-10-01 → 2026-10-02):** Quiet Sector Tether v2 +2.2%/yr, t 2.17,
+positive in 7 / 7 markets: PROMISING, just under the bar. The four others FAIL.
+
+### What the passing strategy does
+
+Within each sector, it buys the stocks that move least with the market (correlation purged of
+volatility) and shorts those that move most, sized by inverse volatility and rebalanced monthly.
+This closely resembles **"betting against correlation"** (Asness, Frazzini, Gormsen and Pedersen,
+*Journal of Financial Economics*, 2020), whose evidence ends before this window. The AI arrived
+at it from US data before 2017; the world exam is an out-of-sample test of that idea in seven
+other markets.
+
+### Stress tests (run after the verdict, `scripts/world_stress.py`, `scripts/world_factors.py`)
+
+| Test | Pooled alpha/yr | t |
+|---|---|---|
+| As registered (5 bps per unit turnover) | +2.9% | 3.40 |
+| 15 bps | +2.6% | 2.94 |
+| 30 bps | +2.0% | 2.26 |
+| 50 bps | +1.2% | 1.36 |
+| Beta hedged with a trailing (causal) 252-day beta | +2.8% | 3.22 |
+| Monthly, after the Fama–French developed-ex-US 5 factors + momentum | +2.5% | 2.64 (R² 0.13) |
+
+Turnover is 2–5× a year. The alpha comes mostly from the short leg (high co-movers lagged the
+benchmark by 3.2%/yr). By calendar year: positive in 8 of 10 (2022 −1.5%, 2026 to date −0.4%).
+
+### Caveats
+
+- **Shorting.** Borrow fees (roughly 0.25–1%/yr on the short half) are not modelled. Korea banned
+  most short selling from March 2020 to May 2021 and all of it from November 2023 to March 2025,
+  so the Korean leg was not fully implementable then.
+- **Costs.** The edge survives 15–30 bps per unit of turnover but not 50; UK and Hong Kong stamp
+  duties sit inside that range for large caps.
+- **Known idea.** This is most likely an AI rediscovery of a published anomaly, confirmed out of
+  sample, not a new one.
+- **Hindsight and survivorship** as disclosed above.
