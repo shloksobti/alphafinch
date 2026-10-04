@@ -23,6 +23,7 @@ import math
 import multiprocessing as mp
 import os
 import pickle
+import sys
 import tempfile
 import traceback
 from concurrent.futures import ProcessPoolExecutor
@@ -167,8 +168,9 @@ class Lab:
         self.mkt = {"train": mk(self.train), "dev": mk(self.dev), "full": mk(self.full)}
 
     def _start(self):
+        recycle = {"max_tasks_per_child": 60} if sys.version_info >= (3, 11) else {}   # free worker memory
         self._pool = ProcessPoolExecutor(self.workers, mp_context=mp.get_context("spawn"), initializer=_init,
-                                         initargs=(self._path, self.hold, self.val), max_tasks_per_child=60)
+                                         initargs=(self._path, self.hold, self.val), **recycle)
 
     def _restart(self):
         pool, self._pool = self._pool, None
