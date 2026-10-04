@@ -163,21 +163,31 @@ def strategy(prices, data=None):          # data is optional
 alphafinch backtest my_strategy.py --market us
 ```
 
-## A real run
+## Real runs, pre-registered
 
-US large caps, 12 generations, 4 islands, bred by Claude Sonnet through Claude Code (`--provider claude-code`):
+Before running, we committed the exact commands, the pass bars and what would count as success in
+[`docs/preregistration-v2.md`](docs/preregistration-v2.md). Earlier looks at the same sealed years
+during development were counted too, which raises the bar. Then we ran 25 generations × 4 islands
+on each market, bred by Claude through Claude Code with Opus for the big ideas.
 
-- **228 strategies** were bred: 137 by the AI (84 mutations, 35 crossovers, 18 immigrants) and the rest by tweaks, blends, seeds and migration. One was discarded by the sandbox.
-- The AI's best inventions included *Calm Crown* (volatility-adjusted momentum with market-volatility targeting), *Calm Momentum Shield* and *Residual Calm Drift*.
-- The champion was *Storm Shelter × Momentum Crown v6*, a blend fine-tuned over six generations.
-
-| Champion | Training (2008–2023) | 🔒 Sealed exam (Oct 2023 – Oct 2026) |
+| | 🇺🇸 S&P 500 (426 stocks) | 🇮🇳 NIFTY 200 (139 stocks) |
 |---|---|---|
-| Alpha per year | **+7.2%** | **+0.6%** (t = 0.17, bar 2.58) → **FAIL** |
-| Return per year | | +20.9% |
-| Equal-weight buy & hold | | +20.7% |
+| Sealed years | Oct 2023 – Oct 2026 | Oct 2023 – Oct 2026 |
+| Exam attempts passed | **0 of 5** (bar t = 3.03) | **0 of 5** (bar t = 2.82) |
+| Best result | 🟡 The Team: alpha +3.2%/yr, t = 1.65 | 🟡 Hedged Calm Residual: alpha +3.1%/yr, t = 1.28 |
+| Champion's return vs buying everything | +11.8% vs +18.9% a year | +7.9% vs +19.3% a year |
 
-The champion made plenty of money in the sealed years: almost exactly as much as buying all 30 stocks. A normal backtest would call it a winner. The alpha exam shows the edge it learned in training didn't survive. That's what AlphaFinch is for.
+**Nothing passed.** Every strategy that sat the exam had positive alpha in the sealed years, and
+three were PROMISING, but none came close to proof. In the US, evolution pushed the training score
+from 0.43 to 0.73 while out-of-sample alpha *fell*: the hand-written momentum seed did better in the
+sealed years than anything the AI evolved. That's adaptive overfitting, caught in the act, and the
+reason the exam exists.
+
+A normal backtesting tool would have shown you the training curve and called it a win.
+
+The champions and teams are now frozen in [`forward/`](forward). We'll score them on data that didn't
+exist when they were made (from October 2026), at 6 and 12 months, and publish the result
+either way.
 
 ## FAQ
 
